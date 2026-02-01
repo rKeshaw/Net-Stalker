@@ -18,3 +18,15 @@ CISCO_UMBRELLA_KEY=same_with_this
 Then, do `pip install backend/requirements.txt`
 
 And you are good to go! (Oh! I forgot to tell you, you need to `pull` first. You know that, right!)
+
+<img width="1158" height="869" alt="image" src="https://github.com/user-attachments/assets/13b634eb-afdf-4ab2-a0aa-151fc2b608e8" />
+<img width="906" height="865" alt="image" src="https://github.com/user-attachments/assets/9378dcb7-fa64-4dac-b3cf-244831a3d066" />
+<img width="896" height="729" alt="image" src="https://github.com/user-attachments/assets/8fcfe800-c4a1-47fb-9ded-c2e48861cab1" />
+<img width="902" height="874" alt="image" src="https://github.com/user-attachments/assets/924997fc-a119-4b3d-acdc-c09992da1eb3" />
+<img width="898" height="643" alt="image" src="https://github.com/user-attachments/assets/e7261598-e4d6-4e30-94e1-607ff875ba84" />
+<img width="902" height="642" alt="image" src="https://github.com/user-attachments/assets/23e9ef9f-0515-4363-9252-0d590fdee9cf" />
+
+
+
+
+
