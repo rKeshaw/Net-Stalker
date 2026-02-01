@@ -21,16 +21,16 @@ And you are good to go! (Oh! I forgot to tell you, you need to `pull` first. You
 
 ## Some demo images
 ### Main screen (after analysis) [to see before analysis, repeat the steps mentioned before:)]
-<img width="1000" height="869" alt="image" src="https://github.com/user-attachments/assets/13b634eb-afdf-4ab2-a0aa-151fc2b608e8" />
+<img width="1100" height="866" alt="image" src="https://github.com/user-attachments/assets/bf6f9dcc-c6b0-487a-8674-cbf9a6aa58ad" />
 
 ### Analysis
-<img width="1000" height="865" alt="image" src="https://github.com/user-attachments/assets/9378dcb7-fa64-4dac-b3cf-244831a3d066" />
+<img width="1100" height="861" alt="image" src="https://github.com/user-attachments/assets/2ac0045d-7f3c-4a91-9795-958232504e76" />
 
 ### External Threat Intelligence
-<img width="1000" height="729" alt="image" src="https://github.com/user-attachments/assets/8fcfe800-c4a1-47fb-9ded-c2e48861cab1" />
+<img width="1100" height="870" alt="image" src="https://github.com/user-attachments/assets/9272a7a6-b032-4bf1-b8fb-e97934ce4602" />
 
 ### Behavior Analysis (Using headless browser)
-<img width="1000" height="874" alt="image" src="https://github.com/user-attachments/assets/924997fc-a119-4b3d-acdc-c09992da1eb3" />
+<img width="1100" height="864" alt="image" src="https://github.com/user-attachments/assets/09375326-e927-4100-804c-30b8b51a8a1c" />
 
 
 
