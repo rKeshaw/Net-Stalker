@@ -12,3 +12,6 @@ cachetools==5.3.2
 aiohttp
 playwright
 pillow
+pyzbar
+opencv-python-headless
+qrcode
