@@ -1,0 +1,16 @@
+From: support@paypa1-security.com
+To: user@example.com
+Subject: Urgent: Verify Your Account Now
+Date: Thu, 29 Jan 2026 10:00:00 +0000
+Message-ID: <12345@fake.com>
+
+Dear Valued Customer,
+
+We have detected unusual activity on your PayPal account. Your account will be suspended within 24 hours unless you verify your information immediately.
+
+Click here to verify: http://192.168.1.1/paypal-verify
+
+This is urgent. Failure to comply will result in permanent account closure.
+
+Best regards,
+PayPal Security Team
