@@ -200,6 +200,27 @@ class GroqPhishingAnalyzer:
                             prompt += f"    - Post-submission URL: {submission.get('post_submission_url', 'N/A')}\n"
                             if submission.get('harvesting_indicators'):
                                 prompt += f"    - Harvesting Indicators: {len(submission['harvesting_indicators'])}\n"
+            
+            if features.get('qr_analysis') and features['qr_analysis'].get('qr_codes_found', 0) > 0:
+                qr = features['qr_analysis']
+                prompt += f"""
+                QR CODE FORENSICS:
+                - QR Codes Found: {qr.get('qr_codes_found')}
+                - Phishing Detected: {qr.get('phishing_detected')}
+                - Risk Level: {qr.get('risk_level')}
+                """
+
+                for code in qr.get('qr_codes', []):
+                    prompt += f"""  Code Analysis:
+                        - Type: {code.get('type')}
+                        - Data/URL: {code.get('data')}
+                        - Risk Score: {code.get('risk_score')}/100
+                        - Indicators: {', '.join(code.get('indicators', []))}
+                    """
+                    if code.get('url_analysis'):
+                        ua = code['url_analysis']
+                        prompt += f"    -> Redirects to: {ua.get('final_url')}\n"
+                        prompt += f"    -> External Verdict: {ua.get('external_api_verdict')}\n"
 
         # Add external API results if available
         if external_context and external_context.get('results'):
