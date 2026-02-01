@@ -2,6 +2,7 @@ const API_URL = 'http://localhost:8000';
 let currentEmailFile = null;
 let eventSource = null;
 let currentlyExpandedAPI = null;
+let currentQRFile = null;
 
 // Tab switching (keep existing)
 function switchTab(tabName) {
@@ -204,7 +205,6 @@ function updateProgress(percent, step, stepsCompleted = []) {
     }
 }
 
-// Email Analysis (keep existing - can be updated similarly)
 function handleEmailFile(input) {
     const file = input.files[0];
     if (!file) return;
@@ -304,6 +304,80 @@ async function analyzeText() {
         
         const data = await response.json();
         displayResults(data);
+        
+    } catch (error) {
+        showError(`Error: ${error.message}`);
+    } finally {
+        setButtonLoading(analyzeBtn, btnText, btnLoader, false);
+    }
+}
+
+function handleQRFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    // Validate image
+    if (!file.type.startsWith('image/')) {
+        showError('Please select an image file');
+        input.value = '';
+        return;
+    }
+    
+    currentQRFile = file;
+    
+    document.getElementById('qrFileName').textContent = file.name;
+    document.getElementById('qrFileInfo').classList.remove('hidden');
+    document.getElementById('analyzeQRBtn').classList.remove('hidden');
+    document.getElementById('qrUploadArea').style.display = 'none';
+}
+
+function clearQRFile() {
+    currentQRFile = null;
+    document.getElementById('qrFileInput').value = '';
+    document.getElementById('qrFileInfo').classList.add('hidden');
+    document.getElementById('analyzeQRBtn').classList.add('hidden');
+    document.getElementById('qrUploadArea').style.display = 'block';
+}
+
+async function analyzeQR() {
+    if (!currentQRFile) return;
+    
+    const analyzeBtn = document.getElementById('analyzeQRBtn');
+    const btnText = document.getElementById('qrBtnText');
+    const btnLoader = document.getElementById('qrBtnLoader');
+    
+    resetUI();
+    setButtonLoading(analyzeBtn, btnText, btnLoader, true);
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', currentQRFile);
+        
+        const response = await fetch(`${API_URL}/analyze/qr`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Analysis failed');
+        }
+        
+        const data = await response.json();
+                
+        if (data.analysis_type === 'url_redirect' && data.task_id) {
+            // CASE 1: It's a URL. Switch to the progress modal!
+            console.log("URL detected in QR, switching to deep scan...");
+            showProgressModal();
+            await streamTaskProgress(data.task_id);
+            
+        } else if (data.analysis_type === 'qr_text') {
+            // CASE 2: It's just text. Show immediate results.
+            displayResults(data);
+            
+        } else if (data.status === 'failed') {
+            showError(data.error);
+        }
         
     } catch (error) {
         showError(`Error: ${error.message}`);
@@ -417,6 +491,10 @@ function createBehavioralDetails(behavioral) {
 
     if (behavioral.honeypot_submission) {
         html += createHoneypotSection(behavioral.honeypot_submission);
+    }
+
+    if (behavioral.qr_analysis) {
+        html += createQRCodeSection(behavioral.qr_analysis);
     }
     
     // Behavioral Anomalies
@@ -729,6 +807,230 @@ function createHoneypotSection(honeypot) {
     
     html += `</div>`;
     return html;
+}
+
+function createQRCodeSection(qrAnalysis) {
+    if (!qrAnalysis || qrAnalysis.qr_codes_found === 0) {
+        return '';
+    }
+    
+    const hasPhishing = qrAnalysis.phishing_detected;
+    const riskLevel = qrAnalysis.risk_level || 'none';
+    
+    let html = `
+        <div class="behavioral-section ${hasPhishing ? 'qr-detected-' + riskLevel : ''}">
+            <h4>📱 QR Code Analysis</h4>
+    `;
+    
+    // Summary
+    html += `
+        <div style="margin-bottom: 15px;">
+            <p style="margin: 5px 0;">
+                <strong>QR Codes Found:</strong> 
+                <span class="qr-count-badge">${qrAnalysis.qr_codes_found}</span>
+            </p>
+            <p style="margin: 5px 0;">
+                <strong>Risk Level:</strong> 
+                <span class="risk-badge risk-${riskLevel}">${riskLevel.toUpperCase()}</span>
+            </p>
+        </div>
+    `;
+    
+    // Critical Detection Alert
+    if (hasPhishing && (riskLevel === 'critical' || riskLevel === 'high')) {
+        html += `
+            <div class="qr-alert critical">
+                <div class="alert-icon">🚨</div>
+                <div class="alert-content">
+                    <h5>QUISHING ATTACK DETECTED</h5>
+                    <p>QR code(s) on this page contain phishing indicators. Scanning these codes may lead to credential theft or malware.</p>
+                    <div class="attack-info">
+                        <strong>Attack Type:</strong> QR Code Phishing (Quishing)<br>
+                        <strong>Risk:</strong> May redirect to fake login pages or malicious downloads
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (hasPhishing && riskLevel === 'medium') {
+        html += `
+            <div class="qr-alert warning">
+                <div class="alert-icon">⚠️</div>
+                <div class="alert-content">
+                    <h5>Suspicious QR Code Detected</h5>
+                    <p>QR code(s) show suspicious characteristics. Exercise caution before scanning.</p>
+                </div>
+            </div>
+        `;
+    } else {
+        html += `
+            <div class="qr-alert safe">
+                <div class="alert-icon">✅</div>
+                <div class="alert-content">
+                    <h5>QR Codes Appear Safe</h5>
+                    <p>No obvious phishing indicators detected in QR code(s).</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Individual QR Code Analysis
+    if (qrAnalysis.qr_codes && qrAnalysis.qr_codes.length > 0) {
+        html += `
+            <div style="margin-top: 20px;">
+                <h5 style="color: #667eea; margin-bottom: 15px;">
+                    🔍 QR Code Details:
+                </h5>
+        `;
+        
+        qrAnalysis.qr_codes.forEach((qr, index) => {
+            const isPhishing = qr.is_phishing || false;
+            const confidence = qr.confidence || 0;
+            
+            html += `
+                <div class="qr-code-card ${isPhishing ? 'qr-suspicious' : 'qr-safe'}">
+                    <div class="qr-code-header">
+                        <div>
+                            <strong>QR Code #${index + 1}</strong>
+                            <span class="qr-type-badge">${qr.type || 'QRCODE'}</span>
+                        </div>
+                        ${isPhishing ? 
+                            '<span class="danger-badge">⚠️ Suspicious</span>' : 
+                            '<span class="safe-badge">✓ Safe</span>'}
+                    </div>
+                    
+                    <div class="qr-code-content">
+            `;
+            
+            // Position info
+            if (qr.position) {
+                html += `
+                    <div class="qr-position-info">
+                        <small>Position: (${qr.position.x}, ${qr.position.y}) • Size: ${qr.position.width}x${qr.position.height}px</small>
+                    </div>
+                `;
+            }
+            
+            // URL analysis
+            if (qr.is_url && qr.decoded_url) {
+                html += `
+                    <div class="qr-url-section">
+                        <strong>Decoded URL:</strong>
+                        <div class="qr-url-display">
+                            <code>${escapeHtml(qr.decoded_url)}</code>
+                        </div>
+                `;
+                
+                if (qr.url_analysis) {
+                    const urlInfo = qr.url_analysis;
+                    html += `
+                        <div class="qr-url-details">
+                            <div><strong>Domain:</strong> ${urlInfo.domain || 'N/A'}</div>
+                            <div><strong>Scheme:</strong> ${urlInfo.scheme || 'N/A'}</div>
+                            ${urlInfo.path ? `<div><strong>Path:</strong> ${urlInfo.path}</div>` : ''}
+                        </div>
+                    `;
+                }
+                
+                html += `</div>`;
+                
+                // Confidence score
+                if (confidence > 0) {
+                    html += `
+                        <div class="qr-confidence">
+                            <strong>Phishing Confidence:</strong>
+                            <div class="confidence-bar-container">
+                                <div class="confidence-bar-fill ${getConfidenceClass(confidence)}" 
+                                     style="width: ${confidence * 100}%"></div>
+                            </div>
+                            <span class="confidence-percentage">${(confidence * 100).toFixed(0)}%</span>
+                        </div>
+                    `;
+                }
+            } else if (qr.data) {
+                // Non-URL data
+                html += `
+                    <div class="qr-data-section">
+                        <strong>Decoded Data:</strong>
+                        <div class="qr-data-display">
+                            <code>${escapeHtml(qr.data.substring(0, 200))}${qr.data.length > 200 ? '...' : ''}</code>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Indicators
+            if (qr.indicators && qr.indicators.length > 0) {
+                html += `
+                    <div class="qr-indicators-section">
+                        <strong>Detection Indicators (${qr.indicators.length}):</strong>
+                        <div class="qr-indicators-list">
+                `;
+                
+                qr.indicators.forEach(indicator => {
+                    const severity = indicator.severity || 'low';
+                    html += `
+                        <div class="qr-indicator-item severity-${severity}">
+                            <div class="indicator-header-mini">
+                                <span class="severity-badge severity-${severity}">${severity.toUpperCase()}</span>
+                                <span class="indicator-type-mini">${formatIndicatorType(indicator.type)}</span>
+                            </div>
+                            <p class="indicator-desc-mini">${indicator.description}</p>
+                            ${indicator.evidence ? 
+                                `<p class="indicator-evidence-mini"><em>${indicator.evidence}</em></p>` : ''}
+                        </div>
+                    `;
+                });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += `</div>`;
+    }
+    
+    // Educational info about Quishing
+    html += `
+        <div class="qr-education-info">
+            <h5>ℹ️ What is QR Code Phishing (Quishing)?</h5>
+            <p>Quishing attacks use QR codes to bypass traditional email and web filters. When you scan a malicious QR code:</p>
+            <ol>
+                <li>Your mobile device camera reads the QR code</li>
+                <li>The embedded URL opens automatically or with one tap</li>
+                <li>You're redirected to a fake login page or malicious site</li>
+                <li>Traditional security filters can't scan QR code images</li>
+            </ol>
+            <p><strong>Common Quishing Tactics:</strong></p>
+            <ul>
+                <li>📧 Fake multi-factor authentication (MFA) prompts</li>
+                <li>📦 Fake package delivery notifications</li>
+                <li>💳 Fake payment requests</li>
+                <li>🅿️ Fake parking violation notices</li>
+                <li>🎟️ Fake event tickets</li>
+            </ul>
+            <p class="qr-safety-tip">
+                <strong>🛡️ Safety Tip:</strong> Always verify the domain before entering credentials. 
+                Legitimate companies won't ask for sensitive information via QR codes.
+            </p>
+        </div>
+    `;
+    
+    html += `</div>`;
+    return html;
+}
+
+function getConfidenceClass(confidence) {
+    if (confidence >= 0.7) return 'confidence-critical';
+    if (confidence >= 0.5) return 'confidence-high';
+    if (confidence >= 0.3) return 'confidence-medium';
+    return 'confidence-low';
 }
 
 function showScreenshotModal(src) {
@@ -1625,6 +1927,41 @@ function handleDrop(e) {
     if (files.length > 0) {
         document.getElementById('emailFileInput').files = files;
         handleEmailFile(document.getElementById('emailFileInput'));
+    }
+}
+
+const qrUploadArea = document.getElementById('qrUploadArea');
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    qrUploadArea.addEventListener(eventName, preventDefaults, false);
+});
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+['dragenter', 'dragover'].forEach(eventName => {
+    qrUploadArea.addEventListener(eventName, () => {
+        qrUploadArea.classList.add('drag-over');
+    }, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    qrUploadArea.addEventListener(eventName, () => {
+        qrUploadArea.classList.remove('drag-over');
+    }, false);
+});
+
+qrUploadArea.addEventListener('drop', handleDrop, false);
+
+function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    
+    if (files.length > 0) {
+        document.getElementById('qrFileInput').files = files;
+        handleQRFile(document.getElementById('qrFileInput'));
     }
 }
 
