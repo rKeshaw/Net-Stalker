@@ -7,9 +7,8 @@ from typing import Dict, List, Any, Optional
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, Browser, Page, Error as PlaywrightError
 from datetime import datetime
-import base64
 from PIL import Image
-import io
+from qr_analyzer import QRCodeAnalyzer
 
 class BehavioralAnalyzer:
     """Analyze URL behavior using headless browser"""
@@ -25,6 +24,7 @@ class BehavioralAnalyzer:
             'username': 'honeypot_user_test',
             'password': 'HoneyP0t!Test#2024'
         }
+        self.qr_analyzer = QRCodeAnalyzer()
         
     async def analyze(self, url: str) -> Dict[str, Any]:
         """Perform behavioral analysis on URL with robust lifecycle management"""
@@ -101,6 +101,19 @@ class BehavioralAnalyzer:
             features['network'] = self._analyze_network(network_data, url)
             features['screenshot_path'] = await self._take_screenshot(page, url)
             features['behavioral_indicators'] = await self._detect_behavioral_anomalies(page)
+            
+            if features.get('screenshot_path'):
+                # Analyze the screenshot we just took
+                qr_results = await self.qr_analyzer.analyze_screenshot(
+                    features['screenshot_path'], 
+                    url
+                )
+                features['qr_analysis'] = qr_results
+                if qr_results.get('indicators'):
+                    features['behavioral_indicators'].extend(qr_results['indicators'])
+                if qr_results.get('phishing_detected'):
+                    features['behavioral_indicators'].append("CRITICAL: Malicious QR Code Detected")
+                    
             features['console_errors'] = len([l for l in console_logs if l['type'] == 'error'])
             
         except Exception as e:
