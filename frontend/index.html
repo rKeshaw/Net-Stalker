@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phishing Detector - Prototype</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ Phishing Detection System</h1>
+            <p class="subtitle">AI-Powered Multi-Format Analysis Prototype</p>
+        </header>
+
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('url')">🔗 URL Analysis</button>
+            <button class="tab-button" onclick="switchTab('email')">📧 Email Analysis</button>
+            <button class="tab-button" onclick="switchTab('text')">📝 Text Analysis</button>
+        </div>
+
+        <!-- URL Analysis Tab -->
+        <div id="urlTab" class="tab-content active">
+            <div class="analyzer-section">
+                <h2>🔗 URL Analysis</h2>
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="urlInput" 
+                        placeholder="Enter URL to analyze (e.g., https://example.com)"
+                        autocomplete="off"
+                    />
+                    <button id="analyzeUrlBtn" onclick="analyzeURL()">
+                        <span id="urlBtnText">Analyze</span>
+                        <span id="urlBtnLoader" class="loader hidden"></span>
+                    </button>
+                </div>
+                <p class="help-text">Enter a complete URL including http:// or https://</p>
+            </div>
+        </div>
+
+        <!-- Email Analysis Tab -->
+        <div id="emailTab" class="tab-content">
+            <div class="analyzer-section">
+                <h2>📧 Email Analysis</h2>
+                <div class="upload-area" id="emailUploadArea">
+                    <input 
+                        type="file" 
+                        id="emailFileInput" 
+                        accept=".eml"
+                        style="display: none;"
+                        onchange="handleEmailFile(this)"
+                    />
+                    <div class="upload-prompt" onclick="document.getElementById('emailFileInput').click()">
+                        <div class="upload-icon">📎</div>
+                        <p><strong>Click to upload</strong> or drag and drop</p>
+                        <p class="upload-hint">Email files (.eml) only</p>
+                    </div>
+                </div>
+                <div id="emailFileInfo" class="file-info hidden">
+                    <span id="emailFileName"></span>
+                    <button onclick="clearEmailFile()" class="clear-btn">✕</button>
+                </div>
+                <button id="analyzeEmailBtn" onclick="analyzeEmail()" class="hidden">
+                    <span id="emailBtnText">Analyze Email</span>
+                    <span id="emailBtnLoader" class="loader hidden"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Text Analysis Tab -->
+        <div id="textTab" class="tab-content">
+            <div class="analyzer-section">
+                <h2>📝 Text Analysis</h2>
+                <textarea 
+                    id="textInput" 
+                    placeholder="Paste email content, message, or any suspicious text here..."
+                    rows="10"
+                ></textarea>
+                <button id="analyzeTextBtn" onclick="analyzeText()">
+                    <span id="textBtnText">Analyze Text</span>
+                    <span id="textBtnLoader" class="loader hidden"></span>
+                </button>
+                <p class="help-text">Minimum 10 characters required</p>
+            </div>
+        </div>
+
+        <!-- Results Container (shared across all tabs) -->
+        <div id="resultsContainer" class="hidden">
+            <div class="results-header">
+                <h2>Analysis Results</h2>
+                <div class="analysis-type-badge" id="analysisTypeBadge"></div>
+                <div id="verdictBadge" class="verdict-badge"></div>
+            </div>
+
+            <div class="result-card">
+                <h3>🎯 Risk Assessment</h3>
+                <div class="risk-score-container">
+                    <div class="risk-score" id="riskScore">0</div>
+                    <div class="risk-label">Risk Score</div>
+                </div>
+                <div class="confidence">
+                    Confidence: <span id="confidence">0%</span>
+                </div>
+            </div>
+
+            <div class="result-card">
+                <h3>🔍 Analysis Summary</h3>
+                <p id="reasoning" class="reasoning"></p>
+            </div>
+
+            <div class="result-card">
+                <h3>⚠️ Detected Indicators</h3>
+                <ul id="indicatorsList" class="indicators-list"></ul>
+            </div>
+
+            <div class="result-card collapsible">
+                <h3 onclick="toggleSection('technicalDetails')">
+                    🔧 Technical Details 
+                    <span class="toggle-icon">▼</span>
+                </h3>
+                <div id="technicalDetails" class="collapsible-content">
+                    <div id="technicalDetailsContent"></div>
+                </div>
+            </div>
+
+            <!-- External API Results Section -->
+            <div id="externalApiCard" class="result-card collapsible hidden">
+                <h3 onclick="toggleSection('externalApiResults')">
+                    🌐 External Threat Intelligence 
+                    <span class="toggle-icon">▼</span>
+                </h3>
+                <div id="externalApiResults" class="collapsible-content">
+                    <div id="externalApiSummary" class="api-summary"></div>
+                    <div id="externalApiDetails" class="api-details-grid"></div>
+                </div>
+            </div>
+
+            <!-- NEW: Behavioral Analysis Section -->
+            <div id="behavioralCard" class="result-card collapsible hidden">
+                <h3 onclick="toggleSection('behavioralResults')">
+                    🎭 Behavioral Analysis 
+                    <span class="toggle-icon">▼</span>
+                </h3>
+                <div id="behavioralResults" class="collapsible-content">
+                    <div id="behavioralSummary" class="behavioral-summary"></div>
+                    <div id="behavioralDetails" class="behavioral-details"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="errorContainer" class="error-container hidden">
+            <p id="errorMessage"></p>
+        </div>
+    </div>
+
+    <!-- Progress Modal -->
+    <div id="progressModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🔍 Analysis in Progress</h3>
+            </div>
+            <div class="modal-body">
+                <div class="progress-info">
+                    <p id="progressStep" class="progress-step">Initializing...</p>
+                    <div class="progress-bar-container">
+                        <div id="progressBar" class="progress-bar-fill" style="width: 0%"></div>
+                    </div>
+                    <p id="progressPercent" class="progress-percent">0%</p>
+                </div>
+                <div id="progressSteps" class="progress-steps-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>Phishing Detection Prototype v0.4 | Background Processing | Real-time Progress | Powered by Groq LLM</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
