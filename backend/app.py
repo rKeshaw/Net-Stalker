@@ -15,6 +15,7 @@ from llm_analyzer import GroqPhishingAnalyzer
 from external_apis import ExternalAPIAggregator
 from behavioral_analyzer import BehavioralAnalyzer 
 from task_manager import task_manager, TaskStatus
+from qr_analyzer import QRCodeAnalyzer
 
 
 @asynccontextmanager
@@ -94,6 +95,7 @@ class TaskResponse(BaseModel):
 llm_analyzer = GroqPhishingAnalyzer()
 api_aggregator = ExternalAPIAggregator()
 behavioral_analyzer = BehavioralAnalyzer(timeout=30) 
+qr_analyzer = QRCodeAnalyzer()
 
 @app.get("/")
 async def root():
@@ -275,6 +277,98 @@ async def analyze_url(request: URLRequest, background_tasks: BackgroundTasks, fa
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/analyze/qr")
+async def analyze_qr(
+    file: UploadFile = File(...), 
+    background_tasks: BackgroundTasks = None,
+    fastapi_req: Request = None
+):
+    """
+    Analyze QR code image. 
+    Smart Routing: 
+    - If URL found -> Triggers background URL analysis (same as URL tab).
+    - If Text found -> Triggers immediate text analysis.
+    """
+    try:
+        # 1. Save uploaded file temporarily
+        file_ext = file.filename.split('.')[-1]
+        temp_filename = f"qr_upload_{int(time.time())}.{file_ext}"
+        temp_path = os.path.join("/tmp/phishing_screenshots", temp_filename)
+        
+        content = await file.read()
+        with open(temp_path, "wb") as f:
+            f.write(content)
+            
+        # 2. Analyze QR Code
+        # We pass None as page_url because this is a direct upload, not a website screenshot
+        qr_results = await qr_analyzer.analyze_screenshot(temp_path, page_url=None)
+        
+        os.remove(temp_path) 
+        
+        if qr_results.get('qr_codes_found', 0) == 0:
+            return {
+                "analysis_type": "qr",
+                "status": "failed",
+                "error": "No QR code detected in the image"
+            }
+
+        # 3. Smart Routing Logic
+        first_code = qr_results['qr_codes'][0]
+        data_content = first_code.get('data', '').strip()
+        
+        # ROUTE A: It is a URL -> Start Background Job
+        if first_code.get('type') == 'url' or data_content.startswith(('http', 'www')):
+            
+            # Normalize URL
+            target_url = data_content
+            if not target_url.startswith('http'):
+                target_url = f"https://{target_url}"
+                
+            # Create the same background task as the URL tab
+            task_id = task_manager.create_task("url", target_url)
+            
+            background_tasks.add_task(
+                analyze_url_background, 
+                task_id, 
+                target_url, 
+                True, # use_external_apis
+                True, # enable_behavioral
+                str(fastapi_req.base_url)
+            )
+            
+            return {
+                "analysis_type": "url_redirect", # Tell frontend to switch to task view
+                "task_id": task_id,
+                "detected_url": target_url,
+                "message": f"QR Code contains URL: {target_url}. Starting deep analysis..."
+            }
+            
+        # ROUTE B: It is Text -> Analyze Immediately
+        else:
+            features = {
+                'text': data_content,
+                'source': 'qr_scan',
+                'qr_metadata': first_code
+            }
+            
+            llm_result = await asyncio.to_thread(
+                llm_analyzer.analyze_text, 
+                data_content, 
+                features
+            )
+            
+            return {
+                "analysis_type": "qr_text",
+                "input_data": data_content,
+                "features": features,
+                "llm_analysis": llm_result,
+                "processing_time": 0.5,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/screenshot/{filename}")
 async def get_screenshot(filename: str):
