@@ -18,6 +18,7 @@
             <button class="tab-button active" onclick="switchTab('url')">🔗 URL Analysis</button>
             <button class="tab-button" onclick="switchTab('email')">📧 Email Analysis</button>
             <button class="tab-button" onclick="switchTab('text')">📝 Text Analysis</button>
+            <button class="tab-button" onclick="switchTab('qr')">📱 QR Analysis</button>
         </div>
 
         <!-- URL Analysis Tab -->
@@ -83,6 +84,37 @@
                     <span id="textBtnLoader" class="loader hidden"></span>
                 </button>
                 <p class="help-text">Minimum 10 characters required</p>
+            </div>
+        </div>
+
+        <div id="qrTab" class="tab-content">
+            <div class="analyzer-section">
+                <h2>📱 QR Code Forensics</h2>
+                
+                <div class="upload-area" id="qrUploadArea">
+                    <input 
+                        type="file" 
+                        id="qrFileInput" 
+                        accept="image/*"
+                        style="display: none;"
+                        onchange="handleQRFile(this)"
+                    />
+                    <div class="upload-prompt" onclick="document.getElementById('qrFileInput').click()">
+                        <div class="upload-icon">📸</div>
+                        <p><strong>Click to upload</strong> or drag and drop QR image</p>
+                        <p class="upload-hint">Supports .png, .jpg, .jpeg</p>
+                    </div>
+                </div>
+
+                <div id="qrFileInfo" class="file-info hidden">
+                    <span id="qrFileName"></span>
+                    <button onclick="clearQRFile()" class="clear-btn">✕</button>
+                </div>
+
+                <button id="analyzeQRBtn" onclick="analyzeQR()" class="hidden">
+                    <span id="qrBtnText">Scan & Analyze</span>
+                    <span id="qrBtnLoader" class="loader hidden"></span>
+                </button>
             </div>
         </div>
 
