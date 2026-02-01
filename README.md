@@ -1,4 +1,4 @@
-# Phishing Detection (Backed {not only} by AI)
+# 🛡️Phishing Detection (Backed {not only} by AI)
 ### To setup, create the .env file:
 I have used grok api (as it is free, upto a extent), if you want to change, change the code accordingly!
 ```
