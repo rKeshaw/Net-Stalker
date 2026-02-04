@@ -20,6 +20,7 @@ Then, do `pip install backend/requirements.txt`
 And you are good to go! (Oh! I forgot to tell you, you need to `pull` first. You know that, right!)
 
 ## Some demo images
+#### Things have changed a bit (this is older version) [but I was too lazy to upload. maybe you can check for yourself]
 ### Main screen (after analysis) [to see before analysis, repeat the steps mentioned before:)]
 <img width="1100" height="866" alt="image" src="https://github.com/user-attachments/assets/bf6f9dcc-c6b0-487a-8674-cbf9a6aa58ad" />
 
