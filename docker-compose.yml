@@ -1,0 +1,36 @@
+services:
+  backend:
+    build: ./backend
+    container_name: phish-net-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY}
+      - GOOGLE_SAFE_BROWSING_API_KEY=${GOOGLE_SAFE_BROWSING_API_KEY}
+      - PLAYWRIGHT_WS_ENDPOINT=ws://secure-browser:3000/chromium/playwright
+    depends_on:
+      - secure-browser
+    networks:
+      - phish-net-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G
+
+  secure-browser:
+    image: ghcr.io/browserless/chromium:latest
+    container_name: phish-net-browser
+    ports:
+      - "3000:3000"
+    environment:
+      - TIMEOUT=60000 
+      - MAX_CONCURRENT_SESSIONS=5
+    networks:
+      - phish-net-network
+    restart: on-failure
+
+networks:
+  phish-net-network:
+    driver: bridge
