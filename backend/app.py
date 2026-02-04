@@ -16,24 +16,23 @@ from external_apis import ExternalAPIAggregator
 from behavioral_analyzer import BehavioralAnalyzer 
 from task_manager import task_manager, TaskStatus
 from qr_analyzer import QRCodeAnalyzer
-
+from report_generator import ForensicReportGenerator
+from fastapi.responses import FileResponse
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async def cleanup_tasks():
         while True:
-            await asyncio.sleep(600)  # Every 10 minutes
+            await asyncio.sleep(600)  
             try:
                 task_manager.cleanup_old_tasks(max_age_minutes=60)
             except Exception as e:
                 logging.error(f"Error during background task cleanup: {e}")
     
-    # Start the background cleanup task
     cleanup_task = asyncio.create_task(cleanup_tasks())
-    
-    yield  # The app stays here while running
+    yield  
 
-    cleanup_task.cancel()  # Clean up the cleanup task
+    cleanup_task.cancel()  
     try:
         await cleanup_task
     except asyncio.CancelledError:
@@ -96,6 +95,7 @@ llm_analyzer = GroqPhishingAnalyzer()
 api_aggregator = ExternalAPIAggregator()
 behavioral_analyzer = BehavioralAnalyzer(timeout=30) 
 qr_analyzer = QRCodeAnalyzer()
+report_gen = ForensicReportGenerator()
 
 @app.get("/")
 async def root():
@@ -134,16 +134,13 @@ def process_screenshot_url(features, base_url):
         features["screenshot_url"] = f"{base}/screenshot/{filename}"
     return features
 
-# Background analysis function
 async def analyze_url_background(task_id: str, url: str, use_external_apis: bool, enable_behavioral: bool, base_url: str):
     """Background task for URL analysis with behavioral analysis"""
     try:
         await task_manager.update_task_progress(task_id, 5, "Starting analysis...")
         
-        # Step 1: Extract features (Run synchronous analyzer in thread pool to avoid blocking)
         await task_manager.update_task_progress(task_id, 10, "Extracting URL features...")
         analyzer = BasicPhishingAnalyzer(url)
-        # Use asyncio.to_thread for blocking I/O calls
         features = await asyncio.to_thread(analyzer.analyze)
         
         if "error" in features:
@@ -152,18 +149,15 @@ async def analyze_url_background(task_id: str, url: str, use_external_apis: bool
         
         await task_manager.update_task_progress(task_id, 25, "Feature extraction completed")
         
-        # Step 2: Behavioral Analysis
         behavioral_features = {}
         if enable_behavioral:
             await task_manager.update_task_progress(task_id, 30, "Running behavioral analysis...")
             behavioral_features = await behavioral_analyzer.analyze(url)
-            # Add screenshot URL
             behavioral_features = process_screenshot_url(behavioral_features, base_url)
             await task_manager.update_task_progress(task_id, 55, "Behavioral analysis completed")
         else:
             await task_manager.update_task_progress(task_id, 55, "Skipped behavioral analysis")
         
-        # Step 3: External API checks
         external_results = {}
         if use_external_apis:
             await task_manager.update_task_progress(task_id, 60, "Querying external threat intelligence APIs...")
@@ -172,10 +166,8 @@ async def analyze_url_background(task_id: str, url: str, use_external_apis: bool
         else:
             await task_manager.update_task_progress(task_id, 80, "Skipped external APIs")
         
-        # Step 4: LLM analysis
         await task_manager.update_task_progress(task_id, 85, "Running AI analysis...")
         
-        # Combine all features for LLM
         combined_features = {**features, **behavioral_features}
         
         llm_result = await asyncio.to_thread(
@@ -187,7 +179,6 @@ async def analyze_url_background(task_id: str, url: str, use_external_apis: bool
         
         await task_manager.update_task_progress(task_id, 95, "Finalizing results...")
         
-        # Prepare final result
         result = {
             "analysis_type": "url",
             "input_data": url,
@@ -208,10 +199,8 @@ async def analyze_url(request: URLRequest, background_tasks: BackgroundTasks, fa
     """Analyze a URL for phishing indicators (with behavioral analysis)"""
     
     if request.async_mode:
-        # Create background task
         task_id = task_manager.create_task("url", request.url)
         
-        # Start background processing
         background_tasks.add_task(
             analyze_url_background, 
             task_id, 
@@ -227,31 +216,26 @@ async def analyze_url(request: URLRequest, background_tasks: BackgroundTasks, fa
             "message": "Analysis started in background. Use /task/{task_id} to check progress."
         }
     else:
-        # Synchronous processing
         start_time = time.time()
         
         try:
             url_str = request.url
             
-            # Basic analysis (Run in thread pool)
             analyzer = BasicPhishingAnalyzer(url_str)
             features = await asyncio.to_thread(analyzer.analyze)
             
             if "error" in features:
                 raise HTTPException(status_code=400, detail=features["error"])
             
-            # Behavioral analysis
             behavioral_features = {}
             if request.enable_behavioral:
                 behavioral_features = await behavioral_analyzer.analyze(url_str)
                 behavioral_features = process_screenshot_url(behavioral_features, str(fastapi_req.base_url))
             
-            # External APIs
             external_results = {}
             if request.use_external_apis:
                 external_results = await api_aggregator.check_url(url_str)
             
-            # LLM analysis
             combined_features = {**features, **behavioral_features}
             llm_result = await asyncio.to_thread(
                 llm_analyzer.analyze_features,
@@ -291,7 +275,6 @@ async def analyze_qr(
     - If Text found -> Triggers immediate text analysis.
     """
     try:
-        # 1. Save uploaded file temporarily
         file_ext = file.filename.split('.')[-1]
         temp_filename = f"qr_upload_{int(time.time())}.{file_ext}"
         temp_path = os.path.join("/tmp/phishing_screenshots", temp_filename)
@@ -300,8 +283,6 @@ async def analyze_qr(
         with open(temp_path, "wb") as f:
             f.write(content)
             
-        # 2. Analyze QR Code
-        # We pass None as page_url because this is a direct upload, not a website screenshot
         qr_results = await qr_analyzer.analyze_screenshot(temp_path, page_url=None)
         
         os.remove(temp_path) 
@@ -313,38 +294,33 @@ async def analyze_qr(
                 "error": "No QR code detected in the image"
             }
 
-        # 3. Smart Routing Logic
         first_code = qr_results['qr_codes'][0]
         data_content = first_code.get('data', '').strip()
         
-        # ROUTE A: It is a URL -> Start Background Job
         if first_code.get('type') == 'url' or data_content.startswith(('http', 'www')):
             
-            # Normalize URL
             target_url = data_content
             if not target_url.startswith('http'):
                 target_url = f"https://{target_url}"
                 
-            # Create the same background task as the URL tab
             task_id = task_manager.create_task("url", target_url)
             
             background_tasks.add_task(
                 analyze_url_background, 
                 task_id, 
                 target_url, 
-                True, # use_external_apis
-                True, # enable_behavioral
+                True, 
+                True, 
                 str(fastapi_req.base_url)
             )
             
             return {
-                "analysis_type": "url_redirect", # Tell frontend to switch to task view
+                "analysis_type": "url_redirect", 
                 "task_id": task_id,
                 "detected_url": target_url,
                 "message": f"QR Code contains URL: {target_url}. Starting deep analysis..."
             }
             
-        # ROUTE B: It is Text -> Analyze Immediately
         else:
             features = {
                 'text': data_content,
@@ -373,7 +349,6 @@ async def analyze_qr(
 @app.get("/screenshot/{filename}")
 async def get_screenshot(filename: str):
     """Serve screenshot file"""
-    # Sanitize filename to prevent directory traversal
     filename = os.path.basename(filename)
     filepath = os.path.join("/tmp/phishing_screenshots", filename)
     
@@ -405,11 +380,9 @@ async def stream_task_progress(task_id: str):
         
         last_progress = -1
         
-        # Stream updates until task is completed or failed
         while task.status in [TaskStatus.PENDING, TaskStatus.PROCESSING]:
             current_progress = task.progress
             
-            # Only send update if progress changed
             if current_progress != last_progress:
                 data = {
                     "task_id": task_id,
@@ -421,9 +394,8 @@ async def stream_task_progress(task_id: str):
                 yield f"data: {json.dumps(data)}\n\n"
                 last_progress = current_progress
             
-            await asyncio.sleep(0.5)  # Poll every 500ms
+            await asyncio.sleep(0.5)  
         
-        # Send final status
         final_data = task.to_dict()
         yield f"data: {json.dumps(final_data)}\n\n"
     
@@ -433,7 +405,7 @@ async def stream_task_progress(task_id: str):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"  # Disable nginx buffering
+            "X-Accel-Buffering": "no"  
         }
     )
 
@@ -448,16 +420,12 @@ async def analyze_email(file: UploadFile = File(...)):
         
         email_content = await file.read()
         
-        # BasicPhishingAnalyzer and EmailPhishingAnalyzer are synchronous, 
-        # but email parsing is usually fast enough to run in main thread for small files.
-        # For larger loads, we will need to wrap it into asyncio.to_thread as well, but for now I am keeping it simple.
         analyzer = EmailPhishingAnalyzer(email_content)
         features = await asyncio.to_thread(analyzer.analyze)
         
         if "error" in features:
             raise HTTPException(status_code=400, detail=features["error"])
         
-        # Only passing features to LLM analyzer
         llm_result = await asyncio.to_thread(
             llm_analyzer.analyze_features, 
             features, 
@@ -489,7 +457,6 @@ async def analyze_text(request: TextAnalysisRequest):
     try:
         text = request.text
         
-        # Extract basic features locally
         features = {
             'text': text[:2000],
             'length': len(text),
@@ -497,11 +464,10 @@ async def analyze_text(request: TextAnalysisRequest):
                                    if kw.lower() in text.lower()),
             'financial_keywords': sum(1 for kw in ['bank', 'account', 'payment', 'credit'] 
                                      if kw.lower() in text.lower()),
-            'has_links': bool(re.findall(r'http[s]?://\S+', text)), # doesn't capture all, but okay 
+            'has_links': bool(re.findall(r'http[s]?://\S+', text)), 
             'link_count': len(re.findall(r'http[s]?://\S+', text))
         }
         
-        # Use LLM Analyzer method instead of ad-hoc helper
         llm_result = await asyncio.to_thread(llm_analyzer.analyze_text, text, features)
         
         processing_time = time.time() - start_time
@@ -520,6 +486,36 @@ async def analyze_text(request: TextAnalysisRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/report/{task_id}/download")
+async def download_report(task_id: str):
+    task = task_manager.get_task(task_id)
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    
+    status = task.status
+    
+    if hasattr(status, 'value'):
+        status_str = str(status.value).lower()
+    else:
+        status_str = str(status).lower()
+
+    if status_str != 'completed' and 'completed' not in status_str:
+        raise HTTPException(status_code=404, detail=f"Analysis not complete (Status: {status})")
+
+    result = getattr(task, 'result', None) or task.get('result')
+    
+    pdf_path = await report_gen.generate(task_id, result)
+    
+    if not pdf_path or not os.path.exists(pdf_path):
+        raise HTTPException(status_code=500, detail="Failed to generate report file")
+        
+    return FileResponse(
+        pdf_path, 
+        media_type='application/pdf', 
+        filename=f"Forensic_Report_{task_id}.pdf"
+    )
 
 @app.exception_handler(422)
 async def validation_exception_handler(request, exc):
