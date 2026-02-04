@@ -3,8 +3,9 @@ let currentEmailFile = null;
 let eventSource = null;
 let currentlyExpandedAPI = null;
 let currentQRFile = null;
+let mapInstance = null;
+let currentTaskId = null;
 
-// Tab switching (keep existing)
 function switchTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
@@ -20,7 +21,6 @@ function switchTab(tabName) {
     document.getElementById('errorContainer').classList.add('hidden');
 }
 
-// URL Analysis with Background Processing
 async function analyzeURL() {
     const urlInput = document.getElementById('urlInput');
     const analyzeBtn = document.getElementById('analyzeUrlBtn');
@@ -43,14 +43,13 @@ async function analyzeURL() {
     setButtonLoading(analyzeBtn, btnText, btnLoader, true);
     
     try {
-        // Start background analysis
         const response = await fetch(`${API_URL}/analyze/url`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 url: url,
                 use_external_apis: true,
-                async_mode: true  // Enable background processing
+                async_mode: true  
             })
         });
         
@@ -62,11 +61,9 @@ async function analyzeURL() {
         const data = await response.json();
         
         if (data.task_id) {
-            // Show progress modal and stream updates
             showProgressModal();
             await streamTaskProgress(data.task_id);
         } else {
-            // Synchronous response (fallback)
             displayResults(data);
         }
         
@@ -78,10 +75,9 @@ async function analyzeURL() {
     }
 }
 
-// Stream task progress using Server-Sent Events
 async function streamTaskProgress(taskId) {
+    currentTaskId = taskId;
     return new Promise((resolve, reject) => {
-        // Close any existing connection
         if (eventSource) {
             eventSource.close();
         }
@@ -100,10 +96,8 @@ async function streamTaskProgress(taskId) {
                     return;
                 }
                 
-                // Update progress UI
                 updateProgress(data.progress, data.current_step, data.steps_completed);
                 
-                // Check if completed
                 if (data.status === 'completed' && data.result) {
                     hideProgressModal();
                     displayResults(data.result);
@@ -124,13 +118,11 @@ async function streamTaskProgress(taskId) {
             console.error('SSE error:', error);
             eventSource.close();
             
-            // Fallback to polling
             pollTaskStatus(taskId).then(resolve).catch(reject);
         };
     });
 }
 
-// Fallback: Poll task status
 async function pollTaskStatus(taskId) {
     const maxAttempts = 60;
     let attempts = 0;
@@ -163,12 +155,10 @@ async function pollTaskStatus(taskId) {
     throw new Error('Analysis timeout');
 }
 
-// Progress Modal Functions
 function showProgressModal() {
     const modal = document.getElementById('progressModal');
     modal.classList.remove('hidden');
     
-    // Reset progress
     updateProgress(0, 'Starting analysis...', []);
 }
 
@@ -178,7 +168,6 @@ function hideProgressModal() {
 }
 
 function updateProgress(percent, step, stepsCompleted = []) {
-    // Update progress bar
     const progressBar = document.getElementById('progressBar');
     const progressPercent = document.getElementById('progressPercent');
     const progressStep = document.getElementById('progressStep');
@@ -188,7 +177,6 @@ function updateProgress(percent, step, stepsCompleted = []) {
     progressStep.textContent = step;
     progressStep.className = percent < 100 ? 'progress-step loading' : 'progress-step';
     
-    // Update steps list
     const stepsList = document.getElementById('progressSteps');
     stepsList.innerHTML = '';
     
@@ -268,7 +256,6 @@ async function analyzeEmail() {
     }
 }
 
-// Text Analysis (keep existing)
 async function analyzeText() {
     const textInput = document.getElementById('textInput');
     const analyzeBtn = document.getElementById('analyzeTextBtn');
@@ -316,7 +303,6 @@ function handleQRFile(input) {
     const file = input.files[0];
     if (!file) return;
     
-    // Validate image
     if (!file.type.startsWith('image/')) {
         showError('Please select an image file');
         input.value = '';
@@ -366,13 +352,11 @@ async function analyzeQR() {
         const data = await response.json();
                 
         if (data.analysis_type === 'url_redirect' && data.task_id) {
-            // CASE 1: It's a URL. Switch to the progress modal!
             console.log("URL detected in QR, switching to deep scan...");
             showProgressModal();
             await streamTaskProgress(data.task_id);
             
         } else if (data.analysis_type === 'qr_text') {
-            // CASE 2: It's just text. Show immediate results.
             displayResults(data);
             
         } else if (data.status === 'failed') {
@@ -386,22 +370,95 @@ async function analyzeQR() {
     }
 }
 
-// Display Behavioral Analysis Results
+function displayGeoMap(features) {
+    const geoCard = document.getElementById('geoMapCard');
+    const geoDetails = document.getElementById('geoDetails');
+    
+    const path = features.geo_path;
+    if (!path || path.length === 0) {
+        geoCard.classList.add('hidden');
+        return;
+    }
+
+    geoCard.classList.remove('hidden');
+
+    let detailsHtml = '';
+    path.forEach((hop) => {
+        let color = hop.type === 'Final Destination' ? '#dc3545' : (hop.type === 'Initial' ? '#28a745' : '#3388ff');
+        detailsHtml += `
+            <div class="tech-item" style="border-left: 3px solid ${color}; padding-left: 10px;">
+                <span class="tech-label">Hop ${hop.hop} (${hop.type}):</span>
+                <span class="tech-value">
+                    ${hop.city}, ${hop.country} 
+                    <br><small style="color:#888;">${hop.domain} (${hop.ip})</small>
+                </span>
+            </div>
+        `;
+    });
+    geoDetails.innerHTML = detailsHtml;
+
+    setTimeout(() => {
+        if (mapInstance) {
+            mapInstance.remove();
+        }
+
+        const startLat = path[0].lat;
+        const startLon = path[0].lon;
+        
+        mapInstance = L.map('phishingMap').setView([startLat, startLon], 2);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OSM contributors',
+            maxZoom: 19
+        }).addTo(mapInstance);
+
+        const latlngs = [];
+        const bounds = L.latLngBounds();
+
+        path.forEach((hop) => {
+            const coords = [hop.lat, hop.lon];
+            latlngs.push(coords);
+            bounds.extend(coords);
+            
+            let color = hop.type === 'Final Destination' ? '#dc3545' : (hop.type === 'Initial' ? '#28a745' : '#3388ff');
+            
+            L.circleMarker(coords, {
+                radius: 6,
+                fillColor: color,
+                color: "#fff",
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).addTo(mapInstance).bindPopup(`<b>${hop.domain}</b><br>${hop.city}, ${hop.country}`);
+        });
+
+        if (latlngs.length > 1) {
+            L.polyline(latlngs, {
+                color: '#ffc107',
+                weight: 2,
+                dashArray: '5, 5'
+            }).addTo(mapInstance);
+            
+            mapInstance.fitBounds(bounds, { padding: [50, 50] });
+        }
+        
+        mapInstance.invalidateSize();
+        
+    }, 300); 
+}
+
 function displayBehavioralResults(behavioral) {
     const behavioralCard = document.getElementById('behavioralCard');
     const summaryDiv = document.getElementById('behavioralSummary');
     const detailsDiv = document.getElementById('behavioralDetails');
     
-    // Check if behavioral analysis was performed
     if (!behavioral || Object.keys(behavioral).length === 0) {
         behavioralCard.classList.add('hidden');
         return;
     }
     
-    // Show the card
     behavioralCard.classList.remove('hidden');
     
-    // Check if analysis was successful
     if (!behavioral.success) {
         summaryDiv.innerHTML = `
             <div style="text-align: center; padding: 20px; color: #dc3545;">
@@ -413,13 +470,10 @@ function displayBehavioralResults(behavioral) {
         return;
     }
     
-    // Display summary
     summaryDiv.innerHTML = createBehavioralSummary(behavioral);
     
-    // Display detailed analysis
     detailsDiv.innerHTML = createBehavioralDetails(behavioral);
     
-    // Add screenshot click handler
     const screenshot = document.getElementById('behavioralScreenshot');
     if (screenshot) {
         screenshot.addEventListener('click', () => {
@@ -470,7 +524,6 @@ function createBehavioralSummary(behavioral) {
 function createBehavioralDetails(behavioral) {
     let html = '';
     
-    // Screenshot
     if (behavioral.screenshot_path) {
         const filename = behavioral.screenshot_path.split('/').pop();
         html += `
@@ -497,7 +550,6 @@ function createBehavioralDetails(behavioral) {
         html += createQRCodeSection(behavioral.qr_analysis);
     }
     
-    // Behavioral Anomalies
     if (behavioral.behavioral_indicators && behavioral.behavioral_indicators.length > 0) {
         html += `
             <div class="behavioral-section">
@@ -518,7 +570,6 @@ function createBehavioralDetails(behavioral) {
         `;
     }
     
-    // Network Analysis
     if (behavioral.network) {
         const network = behavioral.network;
         html += `
@@ -569,7 +620,6 @@ function createBehavioralDetails(behavioral) {
         `;
     }
     
-    // Forms Analysis
     if (behavioral.forms && behavioral.forms.length > 0) {
         html += `
             <div class="behavioral-section">
@@ -611,7 +661,6 @@ function createBehavioralDetails(behavioral) {
         `;
     }
     
-    // Brand Impersonation
     if (behavioral.brand_indicators && behavioral.brand_indicators.detected_brands && 
         behavioral.brand_indicators.detected_brands.length > 0) {
         html += `
@@ -635,7 +684,6 @@ function createBehavioralDetails(behavioral) {
         `;
     }
     
-    // Page Information
     html += `
         <div class="behavioral-section">
             <h4>📄 Page Information</h4>
@@ -685,14 +733,12 @@ function createHoneypotSection(honeypot) {
             <h4>🍯 Honeypot Credential Test</h4>
     `;
     
-    // Summary
     html += `
         <div style="margin-bottom: 15px;">
             <p style="margin: 5px 0;"><strong>Forms Tested:</strong> ${honeypot.forms_submitted} / ${honeypot.forms_found}</p>
         </div>
     `;
     
-    // Critical Detection
     if (honeypot.credential_harvesting_detected) {
         html += `
             <div class="honeypot-alert critical">
@@ -704,7 +750,6 @@ function createHoneypotSection(honeypot) {
             </div>
         `;
         
-        // Show exfiltration evidence
         if (honeypot.exfiltration_evidence && honeypot.exfiltration_evidence.length > 0) {
             html += `
                 <div style="margin-top: 15px;">
@@ -754,7 +799,6 @@ function createHoneypotSection(honeypot) {
         `;
     }
     
-    // Show individual submissions
     if (honeypot.submissions && honeypot.submissions.length > 0) {
         html += `
             <div class="honeypot-submissions" style="margin-top: 20px;">
@@ -822,7 +866,6 @@ function createQRCodeSection(qrAnalysis) {
             <h4>📱 QR Code Analysis</h4>
     `;
     
-    // Summary
     html += `
         <div style="margin-bottom: 15px;">
             <p style="margin: 5px 0;">
@@ -836,7 +879,6 @@ function createQRCodeSection(qrAnalysis) {
         </div>
     `;
     
-    // Critical Detection Alert
     if (hasPhishing && (riskLevel === 'critical' || riskLevel === 'high')) {
         html += `
             <div class="qr-alert critical">
@@ -873,7 +915,6 @@ function createQRCodeSection(qrAnalysis) {
         `;
     }
     
-    // Individual QR Code Analysis
     if (qrAnalysis.qr_codes && qrAnalysis.qr_codes.length > 0) {
         html += `
             <div style="margin-top: 20px;">
@@ -901,7 +942,6 @@ function createQRCodeSection(qrAnalysis) {
                     <div class="qr-code-content">
             `;
             
-            // Position info
             if (qr.position) {
                 html += `
                     <div class="qr-position-info">
@@ -910,7 +950,6 @@ function createQRCodeSection(qrAnalysis) {
                 `;
             }
             
-            // URL analysis
             if (qr.is_url && qr.decoded_url) {
                 html += `
                     <div class="qr-url-section">
@@ -933,7 +972,6 @@ function createQRCodeSection(qrAnalysis) {
                 
                 html += `</div>`;
                 
-                // Confidence score
                 if (confidence > 0) {
                     html += `
                         <div class="qr-confidence">
@@ -947,7 +985,6 @@ function createQRCodeSection(qrAnalysis) {
                     `;
                 }
             } else if (qr.data) {
-                // Non-URL data
                 html += `
                     <div class="qr-data-section">
                         <strong>Decoded Data:</strong>
@@ -958,7 +995,6 @@ function createQRCodeSection(qrAnalysis) {
                 `;
             }
             
-            // Indicators
             if (qr.indicators && qr.indicators.length > 0) {
                 html += `
                     <div class="qr-indicators-section">
@@ -996,7 +1032,6 @@ function createQRCodeSection(qrAnalysis) {
         html += `</div>`;
     }
     
-    // Educational info about Quishing
     html += `
         <div class="qr-education-info">
             <h5>ℹ️ What is QR Code Phishing (Quishing)?</h5>
@@ -1045,29 +1080,23 @@ function showScreenshotModal(src) {
     document.body.appendChild(modal);
 }
 
-// Display Results 
 function displayResults(data) {
     const resultsContainer = document.getElementById('resultsContainer');
     const llm = data.llm_analysis;
     const features = data.features;
     
-    // Analysis type badge
     const typeBadge = document.getElementById('analysisTypeBadge');
     typeBadge.textContent = data.analysis_type.toUpperCase();
     
-    // Verdict badge
     const verdictBadge = document.getElementById('verdictBadge');
     verdictBadge.textContent = llm.verdict;
     verdictBadge.className = `verdict-badge verdict-${llm.verdict}`;
     
-    // Risk score
     document.getElementById('riskScore').textContent = llm.risk_score;
     document.getElementById('confidence').textContent = `${Math.round(llm.confidence * 100)}%`;
     
-    // Reasoning
     document.getElementById('reasoning').textContent = llm.reasoning;
     
-    // Indicators
     const indicatorsList = document.getElementById('indicatorsList');
     indicatorsList.innerHTML = '';
     if (llm.indicators && llm.indicators.length > 0) {
@@ -1080,38 +1109,74 @@ function displayResults(data) {
         indicatorsList.innerHTML = '<li>No specific indicators detected</li>';
     }
     
-    // Technical details
     displayTechnicalDetails(data.analysis_type, features, data.processing_time);
     
-    // External API results
+    resultsContainer.classList.remove('hidden');
+    if (data.features) {
+        displayGeoMap(data.features);
+    }
     if (data.external_apis && Object.keys(data.external_apis).length > 0) {
         displayExternalAPIResults(data.external_apis);
     } else {
         document.getElementById('externalApiCard').classList.add('hidden');
     }
     
-    // Behavioral analysis results (NEW)
     if (data.behavioral_analysis) {
         displayBehavioralResults(data.behavioral_analysis);
     } else {
         document.getElementById('behavioralCard').classList.add('hidden');
     }
     
-    // Show results
     resultsContainer.classList.remove('hidden');
     resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    const btn = document.getElementById('downloadReportBtn');
+    if (data.task_id || currentTaskId) {
+        btn.classList.remove('hidden');
+        if (data.task_id) currentTaskId = data.task_id;
+    } else {
+        btn.classList.add('hidden');
+    }
 }
 
-// NEW: Display External API Results
+async function downloadReport() {
+    if (!currentTaskId) return;
+    
+    const btn = document.getElementById('downloadReportBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⏳ Generating...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch(`${API_URL}/report/${currentTaskId}/download`);
+        
+        if (!response.ok) throw new Error("Report generation failed");
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Forensic_Report_${currentTaskId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+    } catch (error) {
+        showError("Could not generate report. System dependency (wkhtmltopdf) might be missing.");
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
 function displayExternalAPIResults(apiData) {
     const apiCard = document.getElementById('externalApiCard');
     const summaryDiv = document.getElementById('externalApiSummary');
     const detailsDiv = document.getElementById('externalApiDetails');
     
-    // Show the card
     apiCard.classList.remove('hidden');
     
-    // Display summary
     if (apiData.aggregated_verdict) {
         summaryDiv.innerHTML = `
             <div class="api-summary-header">
@@ -1136,7 +1201,6 @@ function displayExternalAPIResults(apiData) {
         `;
     }
     
-    // Display individual API results
     detailsDiv.innerHTML = '';
     
     if (apiData.results && apiData.results.length > 0) {
@@ -1153,14 +1217,11 @@ function createAPIResultCard(result) {
     
     card.className = `api-result-card ${!isAvailable ? 'unavailable' : ''}`;
     
-    // Format API name
     const apiName = result.source.replace(/_/g, ' ').toUpperCase();
     
-    // Status icon
     const statusIcon = isAvailable ? '✅' : '❌';
     
     if (!isAvailable) {
-        // Unavailable or error state
         card.innerHTML = `
             <div class="api-header">
                 <span class="api-name">${apiName}</span>
@@ -1169,7 +1230,6 @@ function createAPIResultCard(result) {
             <p class="api-error">${result.error || 'Not configured'}</p>
         `;
     } else {
-        // Available with results
         const verdict = result.verdict || 'unknown';
         const hasDetailed = result.detailed && Object.keys(result.detailed).length > 0;
         
@@ -1186,7 +1246,6 @@ function createAPIResultCard(result) {
             ${detailedHTML}
         `;
         
-        // Add event listener for toggle button with accordion behavior
         if (hasDetailed) {
             const toggleBtn = card.querySelector('.api-detail-button');
             const detailedContent = card.querySelector('.api-detailed-content');
@@ -1195,7 +1254,6 @@ function createAPIResultCard(result) {
                 toggleBtn.addEventListener('click', () => {
                     const isExpanding = !detailedContent.classList.contains('expanded');
                     
-                    // Close previously expanded section (accordion behavior)
                     if (currentlyExpandedAPI && currentlyExpandedAPI !== detailedContent) {
                         currentlyExpandedAPI.classList.remove('expanded');
                         const prevButton = currentlyExpandedAPI.previousElementSibling;
@@ -1204,15 +1262,12 @@ function createAPIResultCard(result) {
                         }
                     }
                     
-                    // Toggle current section
                     toggleBtn.classList.toggle('expanded');
                     detailedContent.classList.toggle('expanded');
                     
-                    // Update currently expanded reference
                     if (isExpanding) {
                         currentlyExpandedAPI = detailedContent;
                         
-                        // Smooth scroll to the expanded card
                         setTimeout(() => {
                             card.scrollIntoView({ 
                                 behavior: 'smooth', 
@@ -1233,7 +1288,6 @@ function createAPIResultCard(result) {
 function createAPISummary(result) {
     let summaryHTML = '<div class="api-details">';
     
-    // VirusTotal specific summary
     if (result.source === 'virustotal') {
         if (result.malicious_count !== undefined) {
             summaryHTML += `
@@ -1250,7 +1304,6 @@ function createAPISummary(result) {
         }
     }
     
-    // Google Safe Browsing specific summary
     if (result.source === 'google_safe_browsing') {
         if (result.threat_types && result.threat_types.length > 0) {
             summaryHTML += `
@@ -1262,7 +1315,6 @@ function createAPISummary(result) {
         }
     }
     
-    // PhishTank specific summary
     if (result.source === 'phishtank') {
         if (result.in_database) {
             summaryHTML += `
@@ -1275,7 +1327,6 @@ function createAPISummary(result) {
         }
     }
     
-    // AlienVault OTX specific summary (NEW)
     if (result.source === 'alienvault_otx') {
         if (result.in_database) {
             summaryHTML += `
@@ -1308,22 +1359,18 @@ function createAPIDetailed(result) {
             <div class="api-detailed-content">
     `;
     
-    // VirusTotal detailed info
     if (result.source === 'virustotal') {
         detailedHTML += createVirusTotalDetailed(detailed);
     }
     
-    // Google Safe Browsing detailed info
     if (result.source === 'google_safe_browsing') {
         detailedHTML += createSafeBrowsingDetailed(detailed);
     }
     
-    // PhishTank detailed info
     if (result.source === 'phishtank') {
         detailedHTML += createPhishTankDetailed(detailed);
     }
     
-    // AlienVault OTX detailed info (NEW)
     if (result.source === 'alienvault_otx') {
         detailedHTML += createAlienVaultOTXDetailed(detailed);
     }
@@ -1339,7 +1386,6 @@ function createAPIDetailed(result) {
 function createVirusTotalDetailed(detailed) {
     let html = '';
     
-    // URL Info
     if (detailed.url_info) {
         html += `
             <div class="api-detail-section">
@@ -1364,7 +1410,6 @@ function createVirusTotalDetailed(detailed) {
         `;
     }
     
-    // Domain Info
     if (detailed.domain_info) {
         html += `
             <div class="api-detail-section">
@@ -1385,7 +1430,6 @@ function createVirusTotalDetailed(detailed) {
         `;
     }
     
-    // Categories
     if (detailed.categories && Object.keys(detailed.categories).length > 0) {
         html += `
             <div class="api-detail-section">
@@ -1399,7 +1443,6 @@ function createVirusTotalDetailed(detailed) {
         `;
     }
     
-    // Tags
     if (detailed.tags && detailed.tags.length > 0) {
         html += `
             <div class="api-detail-section">
@@ -1411,7 +1454,6 @@ function createVirusTotalDetailed(detailed) {
         `;
     }
     
-    // Threat Names
     if (detailed.threat_names && detailed.threat_names.length > 0) {
         html += `
             <div class="api-detail-section">
@@ -1423,7 +1465,6 @@ function createVirusTotalDetailed(detailed) {
         `;
     }
     
-    // Detections
     if (detailed.detections && detailed.detections.length > 0) {
         html += `
             <div class="api-detail-section">
@@ -1442,7 +1483,6 @@ function createVirusTotalDetailed(detailed) {
         `;
     }
     
-    // WHOIS
     if (detailed.whois && detailed.whois !== 'N/A') {
         html += `
             <div class="api-detail-section">
@@ -1547,7 +1587,6 @@ function createPhishTankDetailed(detailed) {
 function createAlienVaultOTXDetailed(detailed) {
     let html = '';
     
-    // Summary Statistics
     if (detailed.pulse_count !== undefined) {
         html += `
             <div class="api-detail-section">
@@ -1568,7 +1607,6 @@ function createAlienVaultOTXDetailed(detailed) {
         `;
     }
     
-    // Summary Tags and Threats
     if (detailed.summary) {
         const summary = detailed.summary;
         
@@ -1623,7 +1661,6 @@ function createAlienVaultOTXDetailed(detailed) {
         }
     }
     
-    // Domain Info (for domain checks)
     if (detailed.domain_info && Object.keys(detailed.domain_info).length > 0) {
         const domainInfo = detailed.domain_info;
         
@@ -1663,7 +1700,6 @@ function createAlienVaultOTXDetailed(detailed) {
         }
     }
     
-    // Threat Pulses
     if (detailed.pulses && detailed.pulses.length > 0) {
         html += `
             <div class="api-detail-section">
@@ -1718,16 +1754,13 @@ function createAlienVaultOTXDetailed(detailed) {
     return html;
 }
 
-// Helper functions
 function formatTimestamp(timestamp) {
     if (!timestamp) return 'N/A';
     
-    // Handle Unix timestamp
     if (typeof timestamp === 'number') {
         return new Date(timestamp * 1000).toLocaleString();
     }
     
-    // Handle ISO string
     try {
         return new Date(timestamp).toLocaleString();
     } catch {
@@ -1855,7 +1888,6 @@ function displayTechnicalDetails(type, features, processingTime) {
     }
 }
 
-// Helper Functions
 function resetUI() {
     document.getElementById('resultsContainer').classList.add('hidden');
     document.getElementById('errorContainer').classList.add('hidden');
@@ -1894,7 +1926,6 @@ function toggleSection(sectionId) {
         : 'rotate(0deg)';
 }
 
-// Drag and drop for email upload
 const uploadArea = document.getElementById('emailUploadArea');
 
 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -1965,7 +1996,6 @@ function handleDrop(e) {
     }
 }
 
-// Enter key support
 document.getElementById('urlInput').addEventListener('keypress', function(event) {
     if (event.key === 'Enter') {
         analyzeURL();
