@@ -74,26 +74,26 @@ class TaskManager:
     
     def get_task(self, task_id: str) -> Optional[AnalysisTask]:
         """Get task by ID"""
-        return self.tasks.get(task_id)
+        return self.tasks.get(str(task_id))
     
     async def update_task_progress(self, task_id: str, progress: int, step: str):
         """Update task progress thread-safe"""
         async with self._lock:
-            task = self.get_task(task_id)
+            task = self.get_task(str(task_id))
             if task:
                 task.update_progress(progress, step)
     
     async def complete_task(self, task_id: str, result: Any):
         """Mark task as completed thread-safe"""
         async with self._lock:
-            task = self.get_task(task_id)
+            task = self.get_task(str(task_id))
             if task:
                 task.mark_completed(result)
     
     async def fail_task(self, task_id: str, error: str):
         """Mark task as failed thread-safe"""
         async with self._lock:
-            task = self.get_task(task_id)
+            task = self.get_task(str(task_id))
             if task:
                 task.mark_failed(error)
     
@@ -111,5 +111,4 @@ class TaskManager:
         for task_id in to_remove:
             del self.tasks[task_id]
 
-# Global task manager instance
 task_manager = TaskManager()
