@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phishing Detector - Prototype</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
     <div class="container">
@@ -157,6 +159,15 @@
                 </div>
             </div>
 
+            <div id="geoMapCard" class="result-card hidden">
+                <h3>🌍 Server Infrastructure & Location</h3>
+                <div class="map-container">
+                    <div id="phishingMap" style="height: 300px; width: 100%; border-radius: 8px; z-index: 1;"></div>
+                </div>
+                <div id="geoDetails" class="geo-grid" style="margin-top: 15px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                    </div>
+            </div>
+
             <!-- External API Results Section -->
             <div id="externalApiCard" class="result-card collapsible hidden">
                 <h3 onclick="toggleSection('externalApiResults')">
@@ -169,7 +180,7 @@
                 </div>
             </div>
 
-            <!-- NEW: Behavioral Analysis Section -->
+            <!-- Behavioral Analysis Section -->
             <div id="behavioralCard" class="result-card collapsible hidden">
                 <h3 onclick="toggleSection('behavioralResults')">
                     🎭 Behavioral Analysis 
@@ -178,6 +189,21 @@
                 <div id="behavioralResults" class="collapsible-content">
                     <div id="behavioralSummary" class="behavioral-summary"></div>
                     <div id="behavioralDetails" class="behavioral-details"></div>
+                </div>
+            </div>
+
+            <div class="results-header">
+                <div class="header-left">
+                    <h2>Analysis Results</h2>
+                    <div class="analysis-type-badge" id="analysisTypeBadge"></div>
+                </div>
+                
+                <div class="header-right" style="display: flex; gap: 10px; align-items: center;">
+                    <div id="verdictBadge" class="verdict-badge"></div>
+                    
+                    <button id="downloadReportBtn" class="action-btn hidden" onclick="downloadReport()">
+                        📄 Download PDF Report
+                    </button>
                 </div>
             </div>
         </div>
@@ -207,7 +233,7 @@
     </div>
 
     <footer>
-        <p>Phishing Detection Prototype v0.4 | Background Processing | Real-time Progress | Powered by Groq LLM</p>
+        <p>Phishing Detection Prototype v1.3 | Background Processing | Real-time Progress | Powered by Groq LLM</p>
     </footer>
 
     <script src="script.js"></script>
