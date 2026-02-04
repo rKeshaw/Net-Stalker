@@ -19,6 +19,10 @@ Then, do `pip install backend/requirements.txt`
 
 And you are good to go! (Oh! I forgot to tell you, you need to `pull` first. You know that, right!)
 
+It runs both in docker and out of it. Using docker is a safer option, cause `headless browser` actually visits the website. To use docker, build using `docker-compose build` and then run using `docker-compose up`. 
+Otherwise, `mv` to `phish/backend` and run `python app.py`.
+In both case, visit `index.html` to get the interface.
+
 ## Some demo images
 #### Things have changed a bit (this is older version) [but I was too lazy to upload. maybe you can check for yourself]
 ### Main screen (after analysis) [to see before analysis, repeat the steps mentioned before:)]
