@@ -40,17 +40,29 @@ class BehavioralAnalyzer:
         
         try:
             playwright_mgr = await async_playwright().start()
-            
-            browser = await playwright_mgr.chromium.launch(
-                headless=True,
-                args=[
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-dev-shm-usage', 
-                    '--no-sandbox',           
-                    '--disable-setuid-sandbox',
-                    '--single-process'        
-                ]
-            )
+
+            ws_endpoint = os.getenv('PLAYWRIGHT_WS_ENDPOINT')
+
+            if ws_endpoint:
+                print(f"Connecting to remote browser at {ws_endpoint}")
+                browser = await playwright_mgr.chromium.connect(ws_endpoint)
+            else:
+                # Fallback (non-Docker)
+                print("Launching local browser")
+                browser = await playwright_mgr.chromium.launch(
+                    headless=True,
+                    args=['--disable-blink-features=AutomationControlled']
+                )
+            # browser = await playwright_mgr.chromium.launch(
+            #     headless=True,
+            #     args=[
+            #         '--disable-blink-features=AutomationControlled',
+            #         '--disable-dev-shm-usage', 
+            #         '--no-sandbox',           
+            #         '--disable-setuid-sandbox',
+            #         '--single-process'        
+            #     ]
+            # )
             
             context = await browser.new_context(
                 viewport={'width': 1280, 'height': 800},
