@@ -35,35 +35,31 @@ class BehavioralAnalyzer:
             'behavioral_indicators': []
         }
         
-        # Initialize playwright outside try to ensure closeability
         playwright_mgr = None
         browser = None
         
         try:
             playwright_mgr = await async_playwright().start()
             
-            # Use stable launch arguments for various environments
             browser = await playwright_mgr.chromium.launch(
                 headless=True,
                 args=[
                     '--disable-blink-features=AutomationControlled',
-                    '--disable-dev-shm-usage', # Fixes crashes in Docker/limited RAM
-                    '--no-sandbox',           # Required for root/container environments
+                    '--disable-dev-shm-usage', 
+                    '--no-sandbox',           
                     '--disable-setuid-sandbox',
-                    '--single-process'        # Reduces memory overhead
+                    '--single-process'        
                 ]
             )
             
-            # Context settings for better stealth/consistency
             context = await browser.new_context(
                 viewport={'width': 1280, 'height': 800},
                 user_agent=self.user_agent,
-                ignore_https_errors=True # Phishing sites often have bad certs
+                ignore_https_errors=True 
             )
             
             page = await context.new_page()
             
-            # --- Network & Console Tracking Setup ---
             network_data = {'requests': [], 'responses': [], 'failed_requests': [], 'redirects': [], 'form_submissions': []}
             page.on('request', lambda req: self._on_request(req, network_data))
             page.on('response', lambda res: self._on_response(res, network_data))
@@ -72,12 +68,9 @@ class BehavioralAnalyzer:
             console_logs = []
             page.on('console', lambda msg: console_logs.append({'type': msg.type, 'text': msg.text}))
             
-            # --- Navigation ---
             start_time = time.time()
             try:
-                # Use 'domcontentloaded' first for speed, then 'networkidle'
                 response = await page.goto(url, wait_until='domcontentloaded', timeout=self.timeout)
-                # Wait for network to settle if possible, but don't fail if it doesn't
                 try:
                     await page.wait_for_load_state('networkidle', timeout=5000)
                 except:
@@ -90,9 +83,8 @@ class BehavioralAnalyzer:
                 
             except PlaywrightError as e:
                 features['error'] = f"Navigation failed: {str(e)}"
-                return features # Early exit if site won't load
+                return features 
             
-            # --- Feature Extraction ---
             features.update(await self._extract_page_features(page))
 
             form_submission_results = await self._submit_honeypot_forms(page, network_data)
@@ -103,7 +95,6 @@ class BehavioralAnalyzer:
             features['behavioral_indicators'] = await self._detect_behavioral_anomalies(page)
             
             if features.get('screenshot_path'):
-                # Analyze the screenshot we just took
                 qr_results = await self.qr_analyzer.analyze_screenshot(
                     features['screenshot_path'], 
                     url
@@ -147,7 +138,6 @@ class BehavioralAnalyzer:
             except:
                 pass
         
-        # Append once per request
         network_data['requests'].append(request_info)
     
     def _on_response(self, response, network_data: Dict):
@@ -159,7 +149,6 @@ class BehavioralAnalyzer:
             'timestamp': datetime.now().isoformat()
         })
         
-        # Track redirects
         if 300 <= response.status < 400:
             network_data['redirects'].append({
                 'from': response.url,
@@ -187,15 +176,13 @@ class BehavioralAnalyzer:
         }
         
         try:
-            # Find all forms
             forms = await page.query_selector_all('form')
             submission_results['forms_found'] = len(forms)
             
             if len(forms) == 0:
                 return submission_results
             
-            # Analyze each form
-            for i, form in enumerate(forms[:3]):  # Limit to first 3 forms
+            for i, form in enumerate(forms[:3]):  
                 try:
                     form_result = await self._analyze_and_submit_form(page, form, i, network_data)
                     if form_result:
@@ -204,14 +191,12 @@ class BehavioralAnalyzer:
                             submission_results['forms_submitted'] += 1
                             submission_results['attempted'] = True
                             
-                            # Check for credential harvesting
                             if form_result.get('harvesting_indicators'):
                                 submission_results['credential_harvesting_detected'] = True
                                 submission_results['exfiltration_evidence'].extend(
                                     form_result.get('harvesting_indicators', [])
                                 )
                     
-                    # Wait between form submissions
                     await asyncio.sleep(1)
                     
                 except Exception as e:
@@ -243,17 +228,14 @@ class BehavioralAnalyzer:
         }
         
         try:
-            # Get form details
             action = await form.get_attribute('action')
             method = await form.get_attribute('method') or 'get'
             
             result['action'] = action
             result['method'] = method.lower()
             
-            # Find inputs
             inputs = await form.query_selector_all('input, textarea')
             
-            # Check if form is worth submitting (has password or email field)
             input_types = []
             for inp in inputs:
                 inp_type = await inp.get_attribute('type')
@@ -263,27 +245,23 @@ class BehavioralAnalyzer:
             has_password = 'password' in input_types
             has_email = 'email' in input_types
             
-            # Only submit forms that look like login/credential forms
             if not (has_password or has_email):
                 result['skipped'] = True
                 result['reason'] = 'Not a credential form'
                 return result
             
-            # Fill form fields with honeypot data
             for inp in inputs:
                 try:
                     inp_type = await inp.get_attribute('type') or 'text'
                     inp_name = await inp.get_attribute('name') or ''
                     inp_id = await inp.get_attribute('id') or ''
                     
-                    # Check if input is visible and not disabled
                     is_visible = await inp.is_visible()
                     is_disabled = await inp.is_disabled()
                     
                     if not is_visible or is_disabled:
                         continue
                     
-                    # Determine what to fill
                     value_filled = None
                     
                     if inp_type == 'password':
@@ -296,7 +274,6 @@ class BehavioralAnalyzer:
                         await inp.fill(self.honeypot_credentials['username'])
                         value_filled = 'honeypot_username'
                     elif inp_type == 'text' and not value_filled:
-                        # Generic text field, might be username
                         await inp.fill(self.honeypot_credentials['username'])
                         value_filled = 'honeypot_username'
                     
@@ -310,54 +287,43 @@ class BehavioralAnalyzer:
                 except Exception as e:
                     continue
             
-            # Only submit if we filled at least one field
             if not result['inputs_filled']:
                 result['skipped'] = True
                 result['reason'] = 'No fields could be filled'
                 return result
             
-            # Record network state before submission
             requests_before = len(network_data['requests'])
             
-            # Take screenshot before submission
             pre_submit_screenshot = await self._take_screenshot(page, result['pre_submission_url'], f"pre_submit_{form_index}")
             result['pre_submit_screenshot'] = pre_submit_screenshot
             
-            # Submit the form
             try:
-                # Look for submit button
                 submit_button = await form.query_selector('button[type="submit"], input[type="submit"], button:not([type])')
                 
                 if submit_button:
-                    # Click submit button
                     await submit_button.click()
                 else:
-                    # Fallback: submit form programmatically
                     await form.evaluate('form => form.submit()')
                 
                 result['submitted'] = True
                 
-                # Wait for navigation or network activity
                 try:
                     await page.wait_for_load_state('networkidle', timeout=5000)
                 except:
-                    pass  # Continue even if timeout
+                    pass  
                 
-                await asyncio.sleep(3)  # Give time for any async requests
+                await asyncio.sleep(3)  
                 
             except Exception as e:
                 result['submission_error'] = str(e)
                 return result
             
-            # Capture post-submission state
             result['post_submission_url'] = page.url
             result['network_requests_after'] = len(network_data['requests'])
             
-            # Take screenshot after submission
             post_submit_screenshot = await self._take_screenshot(page, result['post_submission_url'], f"post_submit_{form_index}")
             result['post_submit_screenshot'] = post_submit_screenshot
             
-            # Analyze what happened
             result['harvesting_indicators'] = self._analyze_form_submission_behavior(
                 result, 
                 network_data,
@@ -373,17 +339,14 @@ class BehavioralAnalyzer:
         """Analyze form submission behavior to detect credential harvesting"""
         indicators = []
         
-        # Get new requests made after form submission
         new_requests = network_data['requests'][requests_before:]
         post_requests = [req for req in new_requests if req['method'] == 'POST']
         
-        # Check 1: POST request to external domain with our honeypot data
         original_domain = urlparse(result['pre_submission_url']).netloc
         
         for req in post_requests:
             req_domain = urlparse(req['url']).netloc
             
-            # Check if POST went to different domain
             if req_domain != original_domain:
                 indicators.append({
                     'type': 'external_post',
@@ -393,7 +356,6 @@ class BehavioralAnalyzer:
                     'evidence': 'POST request to different domain after form submission'
                 })
             
-            # Check if honeypot data appears in POST
             if req.get('post_data'):
                 post_data = req['post_data'].lower()
                 if (self.honeypot_credentials['email'].lower() in post_data or 
@@ -406,17 +368,16 @@ class BehavioralAnalyzer:
                         'evidence': 'Honeypot data found in network request'
                     })
         
-        # Check 2: Redirect to legitimate site after submission (classic phishing behavior)
         if result['post_submission_url'] != result['pre_submission_url']:
             post_domain = urlparse(result['post_submission_url']).netloc
             pre_domain = urlparse(result['pre_submission_url']).netloc
             
-            # Check if redirected to known legitimate sites
             legitimate_domains = [
                 'google.com', 'facebook.com', 'microsoft.com', 'apple.com',
                 'amazon.com', 'paypal.com', 'netflix.com', 'linkedin.com'
             ] # Could be expanded with a larger list (Just for a demo)
             
+            redirected_trusted = False
             for legit_domain in legitimate_domains:
                 if legit_domain in post_domain and legit_domain not in pre_domain:
                     indicators.append({
@@ -425,8 +386,21 @@ class BehavioralAnalyzer:
                         'description': f'Redirected to legitimate site after credential submission: {post_domain}',
                         'evidence': f'Classic phishing: collect credentials then redirect to real {legit_domain}'
                     })
+                    redirected_trusted = True
+            
+            if not redirected_trusted:
+                path = urlparse(result['post_submission_url']).path.lower()
+
+                if any(x in path for x in ['error', 'login', 'fail', 'retry']):
+                    pass
+                else:
+                    indicators.append({
+                        'type': 'unvalidated_login',
+                        'severity': 'medium',
+                        'description': 'Site accepted invalid credentials without error', 
+                        'evidence': 'No error detected in URL after submission'
+                    })
         
-        # Check 3: Multiple POST requests (form resubmission to multiple endpoints)
         if len(post_requests) > 1:
             unique_domains = set(urlparse(req['url']).netloc for req in post_requests)
             if len(unique_domains) > 1:
@@ -438,9 +412,7 @@ class BehavioralAnalyzer:
                     'evidence': 'Form data submitted to multiple endpoints'
                 })
         
-        # Check 4: Success without proper authentication
         if result['post_submission_url'] != result['pre_submission_url']:
-            # If page changed after submitting fake credentials, that's suspicious
             if 'error' not in result['post_submission_url'].lower() and \
                'login' not in result['post_submission_url'].lower():
                 indicators.append({
@@ -457,26 +429,22 @@ class BehavioralAnalyzer:
         features = {}
         
         try:
-            # Page title
             features['title'] = await page.title()
             
-            # Page content
             content = await page.content()
             features['content_length'] = len(content)
             
-            # Forms analysis
             forms = await page.query_selector_all('form')
             features['form_count'] = len(forms)
             
             form_details = []
-            for form in forms[:10]:  # Analyze first 10 forms
+            for form in forms[:10]:  
                 form_info = await self._analyze_form(form)
                 if form_info:
                     form_details.append(form_info)
             
             features['forms'] = form_details
             
-            # Input fields
             password_inputs = await page.query_selector_all('input[type="password"]')
             email_inputs = await page.query_selector_all('input[type="email"]')
             text_inputs = await page.query_selector_all('input[type="text"]')
@@ -485,7 +453,6 @@ class BehavioralAnalyzer:
             features['has_email_field'] = len(email_inputs) > 0
             features['total_input_fields'] = len(password_inputs) + len(email_inputs) + len(text_inputs)
             
-            # Links analysis
             links = await page.query_selector_all('a[href]')
             features['link_count'] = len(links)
             
@@ -493,7 +460,7 @@ class BehavioralAnalyzer:
             internal_links = []
             parsed_url = urlparse(page.url)
             
-            for link in links[:100]:  # Check first 100 links
+            for link in links[:100]: 
                 try:
                     href = await link.get_attribute('href')
                     if href:
@@ -509,7 +476,6 @@ class BehavioralAnalyzer:
             features['internal_links_count'] = len(internal_links)
             features['external_links_sample'] = external_links[:10]
             
-            # Iframes
             iframes = await page.query_selector_all('iframe')
             features['iframe_count'] = len(iframes)
             
@@ -524,7 +490,6 @@ class BehavioralAnalyzer:
             
             features['iframe_sources'] = iframe_sources
             
-            # Scripts
             scripts = await page.query_selector_all('script')
             features['script_count'] = len(scripts)
             
@@ -541,23 +506,18 @@ class BehavioralAnalyzer:
             
             features['external_scripts_count'] = external_scripts
             
-            # Meta tags
             meta_tags = await page.query_selector_all('meta')
             features['meta_tag_count'] = len(meta_tags)
             
-            # Check for specific meta tags
             features['has_viewport_meta'] = await page.query_selector('meta[name="viewport"]') is not None
             features['has_description_meta'] = await page.query_selector('meta[name="description"]') is not None
             
-            # Images
             images = await page.query_selector_all('img')
             features['image_count'] = len(images)
             
-            # Favicon
             favicon = await page.query_selector('link[rel*="icon"]')
             features['has_favicon'] = favicon is not None
             
-            # Check for common brand indicators
             features['brand_indicators'] = await self._detect_brand_indicators(page)
             
         except Exception as e:
@@ -604,7 +564,6 @@ class BehavioralAnalyzer:
             'redirect_count': len(network_data['redirects'])
         }
         
-        # Analyze domains contacted
         domains_contacted = set()
         for req in network_data['requests']:
             try:
@@ -617,10 +576,8 @@ class BehavioralAnalyzer:
         analysis['unique_domains'] = len(domains_contacted)
         analysis['domains_list'] = list(domains_contacted)[:20]  # Top 20
         
-        # Check for suspicious patterns
         original_domain = urlparse(original_url).netloc
         
-        # Third-party requests
         third_party = [
             req for req in network_data['requests']
             if original_domain not in req['url']
@@ -631,7 +588,6 @@ class BehavioralAnalyzer:
             len(third_party) / max(len(network_data['requests']), 1), 2
         )
         
-        # Check for data exfiltration patterns
         post_requests = [
             req for req in network_data['requests']
             if req['method'] == 'POST'
@@ -643,7 +599,6 @@ class BehavioralAnalyzer:
             if original_domain not in req['url']
         ])
         
-        # Analyze resource types
         resource_types = {}
         for req in network_data['requests']:
             rtype = req.get('resource_type', 'unknown')
@@ -651,7 +606,6 @@ class BehavioralAnalyzer:
         
         analysis['resource_types'] = resource_types
         
-        # Check for suspicious status codes
         suspicious_statuses = [
             res for res in network_data['responses']
             if res['status'] >= 400
@@ -666,7 +620,6 @@ class BehavioralAnalyzer:
         indicators = []
         
         try:
-            # Check for auto-submit forms
             auto_submit_script = """
                 () => {
                     const forms = document.querySelectorAll('form');
@@ -685,7 +638,6 @@ class BehavioralAnalyzer:
             if has_auto_submit:
                 indicators.append("Auto-submit form detected")
             
-            # Check for hidden iframes
             hidden_iframes_script = """
                 () => {
                     const iframes = document.querySelectorAll('iframe');
@@ -705,7 +657,6 @@ class BehavioralAnalyzer:
             if hidden_iframes > 0:
                 indicators.append(f"{hidden_iframes} hidden iframe(s) detected")
             
-            # Check for suspicious JavaScript patterns
             suspicious_js_script = """
                 () => {
                     const scripts = document.querySelectorAll('script');
@@ -737,7 +688,6 @@ class BehavioralAnalyzer:
             js_indicators = await page.evaluate(suspicious_js_script)
             indicators.extend(js_indicators)
             
-            # Check for fake address bar
             fake_address_bar_script = """
                 () => {
                     const inputs = document.querySelectorAll('input[type="text"], input[type="url"]');
@@ -762,7 +712,6 @@ class BehavioralAnalyzer:
             if has_fake_address_bar:
                 indicators.append("Fake address bar detected")
             
-            # Check for right-click disable
             right_click_disabled_script = """
                 () => {
                     return document.oncontextmenu !== null;
@@ -773,7 +722,6 @@ class BehavioralAnalyzer:
             if right_click_disabled:
                 indicators.append("Right-click disabled")
             
-            # Check for popup behavior
             popup_script = """
                 () => {
                     const scripts = document.querySelectorAll('script');
@@ -794,7 +742,6 @@ class BehavioralAnalyzer:
             if has_popup:
                 indicators.append("Popup mechanism detected")
             
-            # Check for clipboard access
             clipboard_script = """
                 () => {
                     const scripts = document.querySelectorAll('script');
@@ -835,7 +782,6 @@ class BehavioralAnalyzer:
         detected = []
         
         try:
-            # Check page content
             content = await page.content()
             content_lower = content.lower()
             title = await page.title()
@@ -857,11 +803,9 @@ class BehavioralAnalyzer:
     async def _take_screenshot(self, page: Page, url: str, suffix: str = None) -> Optional[str]:
         """Take screenshot of the page"""
         try:
-            # Generate unique filename
             url_hash = hashlib.md5(url.encode()).hexdigest()
             timestamp = int(time.time())
             
-            # Add suffix if provided
             if suffix:
                 filename = f"screenshot_{url_hash}_{suffix}_{timestamp}.png"
             else:
@@ -869,18 +813,14 @@ class BehavioralAnalyzer:
                 
             filepath = os.path.join(self.screenshots_dir, filename)
             
-            # Take screenshot
             await page.screenshot(path=filepath, full_page=False)
             
-            # Compress image
             with Image.open(filepath) as img:
-                # Resize if too large
                 if img.width > 1200:
                     ratio = 1200 / img.width
                     new_size = (1200, int(img.height * ratio))
                     img = img.resize(new_size, Image.Resampling.LANCZOS)
                 
-                # Save compressed
                 img.save(filepath, 'PNG', optimize=True, quality=85)
             
             return filepath
