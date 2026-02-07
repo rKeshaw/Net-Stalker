@@ -172,6 +172,33 @@ class ForensicReportGenerator:
             </div>
             {% endif %}
 
+            {% if pcap_available %}
+            <div class="card" style="margin-bottom: 30px;">
+                <div class="card-title">Network Packet Forensics (PCAP)</div>
+                <div class="grid-2" style="margin-bottom: 0;">
+                    <div>
+                        <div class="data-row">
+                            <span class="data-label">Total Packets</span>
+                            <span class="data-value">{{ packet_count }}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Capture Duration</span>
+                            <span class="data-value">{{ duration }}s</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="card-title" style="margin-top: 0;">Top Protocols</div>
+                        {% for proto, count in top_protocols.items() %}
+                        <div class="data-row">
+                            <span class="data-label">{{ proto }}</span>
+                            <span class="data-value">{{ count }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <div class="footer">
                 CONFIDENTIAL FORENSIC REPORT | GENERATED AUTOMATICALLY BY PHISH DETECTOR AI | DO NOT DISTRIBUTE
             </div>
@@ -190,7 +217,9 @@ class ForensicReportGenerator:
             if features.get('screenshot_path') and os.path.exists(features['screenshot_path']):
                 with open(features['screenshot_path'], "rb") as img_file:
                     screenshot_b64 = base64.b64encode(img_file.read()).decode('utf-8')
-
+            pcap_data = features.get('pcap_analysis', {})
+            pcap_stats = pcap_data.get('statistics', {}) if pcap_data else {}
+            
             context = {
                 'task_id': task_id,
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -201,6 +230,10 @@ class ForensicReportGenerator:
                 'risk_score': llm.get('risk_score', 0),
                 'domain_age': features.get('domain_age_days', 'Unknown'),
                 'ip': features.get('hosting_ip', 'Unknown'),
+                'pcap_available': bool(pcap_data),
+                'packet_count': pcap_stats.get('packet_count', 0),
+                'duration': pcap_stats.get('duration_seconds', 0),
+                'top_protocols': pcap_stats.get('top_protocols', {}),
                 'city': geo.get('city', 'Unknown'),
                 'country': geo.get('country', 'Unknown'),
                 'isp': geo.get('isp', 'Unknown'),
