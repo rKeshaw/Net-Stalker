@@ -13,6 +13,8 @@ services:
       - secure-browser
     networks:
       - phish-net-network
+    cap_add:          
+      - NET_ADMIN
     deploy:
       resources:
         limits:
