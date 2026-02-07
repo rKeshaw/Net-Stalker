@@ -18,6 +18,8 @@ from task_manager import task_manager, TaskStatus
 from qr_analyzer import QRCodeAnalyzer
 from report_generator import ForensicReportGenerator
 from fastapi.responses import FileResponse
+from pcap_analyzer import PCAPAnalyzer
+import shutil
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -96,6 +98,7 @@ api_aggregator = ExternalAPIAggregator()
 behavioral_analyzer = BehavioralAnalyzer(timeout=30) 
 qr_analyzer = QRCodeAnalyzer()
 report_gen = ForensicReportGenerator()
+pcap_analyzer = PCAPAnalyzer()
 
 @app.get("/")
 async def root():
@@ -487,6 +490,36 @@ async def analyze_text(request: TextAnalysisRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+@app.post("/analyze/pcap")
+async def analyze_pcap(file: UploadFile = File(...)):
+    """Analyze a PCAP file for network forensics"""
+    try:
+        # Validate file type
+        if not file.filename.endswith(('.pcap', '.cap', '.pcapng')):
+             raise HTTPException(status_code=400, detail="Only .pcap, .cap, or .pcapng files are supported")
+
+        # Save to temporary file
+        temp_dir = "/tmp/phishing_pcaps"
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_path = os.path.join(temp_dir, f"upload_{int(time.time())}_{file.filename}")
+        
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # Run Analysis
+        result = await pcap_analyzer.analyze_file(temp_path)
+        
+        # Cleanup 
+        # os.remove(temp_path)
+
+        if result.get("status") == "failed":
+             raise HTTPException(status_code=500, detail=result.get("error"))
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/report/{task_id}/download")
 async def download_report(task_id: str):
     task = task_manager.get_task(task_id)
@@ -515,6 +548,23 @@ async def download_report(task_id: str):
         pdf_path, 
         media_type='application/pdf', 
         filename=f"Forensic_Report_{task_id}.pdf"
+    )
+
+@app.get("/pcap/{filename}")
+async def download_pcap(filename: str):
+    """Download a specific PCAP file"""
+    # Security:only serve from the temp directory and sanitize filename
+    safe_filename = os.path.basename(filename)
+    pcap_dir = "/tmp/phishing_pcaps"
+    filepath = os.path.join(pcap_dir, safe_filename)
+    
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Capture file not found")
+        
+    return FileResponse(
+        filepath, 
+        media_type='application/vnd.tcpdump.pcap', 
+        filename=safe_filename
     )
 
 @app.exception_handler(422)
