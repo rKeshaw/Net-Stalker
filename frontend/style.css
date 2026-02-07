@@ -2395,3 +2395,66 @@ footer {
 .qr-safety-tip strong {
     color: #f57f17;
 }
+
+#pcapUploadArea {
+    border: 3px dashed #e0e0e0;
+    border-radius: 12px;
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    margin-bottom: 20px;
+}
+
+#pcapUploadArea:hover {
+    border-color: #667eea;
+    background: #f9f9ff;
+}
+
+#protocolChart, #timeFlowChart, #packetLenChart {
+    margin: 0 auto;
+}
+
+#pcapResultsWrapper {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+}
+
+@media (min-width: 900px) {
+    #pcapResultsWrapper {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    #pcapResultsWrapper .result-card:first-child, /* Stats */
+    #pcapResultsWrapper .result-card:nth-child(3) /* Time Flow */ {
+        grid-column: span 2;
+    }
+}
+
+.action-btn.secondary {
+    background: white;
+    color: #667eea;
+    border: 2px solid #667eea;
+}
+
+.action-btn.secondary:hover {
+    background: #f0f0ff;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+}
+
+.action-btn {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
