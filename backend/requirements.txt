@@ -16,3 +16,6 @@ pyzbar
 opencv-python-headless
 qrcode
 jinja2
+scapy
+geoip2
+pandas
