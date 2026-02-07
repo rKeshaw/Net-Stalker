@@ -6,6 +6,7 @@
     <title>Phishing Detector - Prototype</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
@@ -15,15 +16,14 @@
             <p class="subtitle">Autonomous Phishing Defense Analyst</p>
         </header>
 
-        <!-- Tab Navigation -->
         <div class="tabs">
             <button class="tab-button active" onclick="switchTab('url')">🔗 URL Analysis</button>
             <button class="tab-button" onclick="switchTab('email')">📧 Email Analysis</button>
             <button class="tab-button" onclick="switchTab('text')">📝 Text Analysis</button>
             <button class="tab-button" onclick="switchTab('qr')">📱 QR Analysis</button>
+            <button class="tab-button" onclick="switchTab('pcap')">🦈 PCAP Forensics</button>
         </div>
 
-        <!-- URL Analysis Tab -->
         <div id="urlTab" class="tab-content active">
             <div class="analyzer-section">
                 <h2>🔗 URL Analysis</h2>
@@ -43,7 +43,6 @@
             </div>
         </div>
 
-        <!-- Email Analysis Tab -->
         <div id="emailTab" class="tab-content">
             <div class="analyzer-section">
                 <h2>📧 Email Analysis</h2>
@@ -72,7 +71,6 @@
             </div>
         </div>
 
-        <!-- Text Analysis Tab -->
         <div id="textTab" class="tab-content">
             <div class="analyzer-section">
                 <h2>📝 Text Analysis</h2>
@@ -92,7 +90,6 @@
         <div id="qrTab" class="tab-content">
             <div class="analyzer-section">
                 <h2>📱 QR Code Forensics</h2>
-                
                 <div class="upload-area" id="qrUploadArea">
                     <input 
                         type="file" 
@@ -107,12 +104,10 @@
                         <p class="upload-hint">Supports .png, .jpg, .jpeg</p>
                     </div>
                 </div>
-
                 <div id="qrFileInfo" class="file-info hidden">
                     <span id="qrFileName"></span>
                     <button onclick="clearQRFile()" class="clear-btn">✕</button>
                 </div>
-
                 <button id="analyzeQRBtn" onclick="analyzeQR()" class="hidden">
                     <span id="qrBtnText">Scan & Analyze</span>
                     <span id="qrBtnLoader" class="loader hidden"></span>
@@ -120,42 +115,106 @@
             </div>
         </div>
 
-        <!-- Results Container (shared across all tabs) -->
+        <div id="pcapTab" class="tab-content">
+            <div class="analyzer-section">
+                <h2>🦈 Network Traffic Forensics (PCAP)</h2>
+                <div class="upload-area" id="pcapUploadArea">
+                    <input 
+                        type="file" 
+                        id="pcapFileInput" 
+                        accept=".pcap,.cap,.pcapng"
+                        style="display: none;"
+                        onchange="handlePcapFile(this)"
+                    />
+                    <div class="upload-prompt" onclick="document.getElementById('pcapFileInput').click()">
+                        <div class="upload-icon">📡</div>
+                        <p><strong>Click to upload</strong> or drag and drop PCAP file</p>
+                        <p class="upload-hint">Supports .pcap, .cap, .pcapng</p>
+                    </div>
+                </div>
+                <div id="pcapFileInfo" class="file-info hidden">
+                    <span id="pcapFileName"></span>
+                    <button onclick="clearPcapFile()" class="clear-btn">✕</button>
+                </div>
+                <button id="analyzePcapBtn" onclick="analyzePcap()" class="hidden">
+                    <span id="pcapBtnText">Analyze Traffic</span>
+                    <span id="pcapBtnLoader" class="loader hidden"></span>
+                </button>
+            </div>
+        </div>
+
         <div id="resultsContainer" class="hidden">
             <div class="results-header">
-                <h2>Analysis Results</h2>
-                <div class="analysis-type-badge" id="analysisTypeBadge"></div>
-                <div id="verdictBadge" class="verdict-badge"></div>
-            </div>
-
-            <div class="result-card">
-                <h3>🎯 Risk Assessment</h3>
-                <div class="risk-score-container">
-                    <div class="risk-score" id="riskScore">0</div>
-                    <div class="risk-label">Risk Score</div>
+                <div class="header-left">
+                    <h2>Analysis Results</h2>
+                    <div class="analysis-type-badge" id="analysisTypeBadge"></div>
                 </div>
-                <div class="confidence">
-                    Confidence: <span id="confidence">0%</span>
+                
+                <div class="header-right" style="display: flex; gap: 10px; align-items: center;">
+                    <div id="verdictBadge" class="verdict-badge hidden"></div>
+                    
+                    <button id="downloadPcapBtn" class="action-btn secondary hidden" onclick="downloadPcap()">
+                        📡 Download PCAP
+                    </button>
+
+                    <button id="downloadReportBtn" class="action-btn hidden" onclick="downloadReport()">
+                        📄 Download PDF Report
+                    </button>
                 </div>
             </div>
 
-            <div class="result-card">
-                <h3>🔍 Analysis Summary</h3>
-                <p id="reasoning" class="reasoning"></p>
+            <div id="standardResultsWrapper">
+                <div class="result-card">
+                    <h3>🎯 Risk Assessment</h3>
+                    <div class="risk-score-container">
+                        <div class="risk-score" id="riskScore">0</div>
+                        <div class="risk-label">Risk Score</div>
+                    </div>
+                    <div class="confidence">
+                        Confidence: <span id="confidence">0%</span>
+                    </div>
+                </div>
+
+                <div class="result-card">
+                    <h3>🔍 Analysis Summary</h3>
+                    <p id="reasoning" class="reasoning"></p>
+                </div>
+
+                <div class="result-card">
+                    <h3>⚠️ Detected Indicators</h3>
+                    <ul id="indicatorsList" class="indicators-list"></ul>
+                </div>
+
+                <div class="result-card collapsible">
+                    <h3 onclick="toggleSection('technicalDetails')">
+                        🔧 Technical Details 
+                        <span class="toggle-icon">▼</span>
+                    </h3>
+                    <div id="technicalDetails" class="collapsible-content">
+                        <div id="technicalDetailsContent"></div>
+                    </div>
+                </div>
             </div>
 
-            <div class="result-card">
-                <h3>⚠️ Detected Indicators</h3>
-                <ul id="indicatorsList" class="indicators-list"></ul>
-            </div>
+            <div id="pcapResultsWrapper" class="hidden">
+                <div class="result-card">
+                    <h3>📊 Traffic Statistics</h3>
+                    <div class="tech-grid" id="pcapStatsGrid"></div>
+                </div>
 
-            <div class="result-card collapsible">
-                <h3 onclick="toggleSection('technicalDetails')">
-                    🔧 Technical Details 
-                    <span class="toggle-icon">▼</span>
-                </h3>
-                <div id="technicalDetails" class="collapsible-content">
-                    <div id="technicalDetailsContent"></div>
+                <div class="result-card">
+                    <h3>🥧 Protocol Distribution</h3>
+                    <div id="protocolChart" style="width: 100%; height: 400px;"></div>
+                </div>
+
+                <div class="result-card">
+                    <h3>📈 Traffic Flow (Time Series)</h3>
+                    <div id="timeFlowChart" style="width: 100%; height: 350px;"></div>
+                </div>
+
+                <div class="result-card">
+                    <h3>📏 Packet Length Distribution</h3>
+                    <div id="packetLenChart" style="width: 100%; height: 350px;"></div>
                 </div>
             </div>
 
@@ -165,10 +224,9 @@
                     <div id="phishingMap" style="height: 300px; width: 100%; border-radius: 8px; z-index: 1;"></div>
                 </div>
                 <div id="geoDetails" class="geo-grid" style="margin-top: 15px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-                    </div>
+                </div>
             </div>
 
-            <!-- External API Results Section -->
             <div id="externalApiCard" class="result-card collapsible hidden">
                 <h3 onclick="toggleSection('externalApiResults')">
                     🌐 External Threat Intelligence 
@@ -180,7 +238,6 @@
                 </div>
             </div>
 
-            <!-- Behavioral Analysis Section -->
             <div id="behavioralCard" class="result-card collapsible hidden">
                 <h3 onclick="toggleSection('behavioralResults')">
                     🎭 Behavioral Analysis 
@@ -191,21 +248,6 @@
                     <div id="behavioralDetails" class="behavioral-details"></div>
                 </div>
             </div>
-
-            <div class="results-header">
-                <div class="header-left">
-                    <h2>Analysis Results</h2>
-                    <div class="analysis-type-badge" id="analysisTypeBadge"></div>
-                </div>
-                
-                <div class="header-right" style="display: flex; gap: 10px; align-items: center;">
-                    <div id="verdictBadge" class="verdict-badge"></div>
-                    
-                    <button id="downloadReportBtn" class="action-btn hidden" onclick="downloadReport()">
-                        📄 Download PDF Report
-                    </button>
-                </div>
-            </div>
         </div>
 
         <div id="errorContainer" class="error-container hidden">
@@ -213,7 +255,6 @@
         </div>
     </div>
 
-    <!-- Progress Modal -->
     <div id="progressModal" class="modal hidden">
         <div class="modal-content">
             <div class="modal-header">
