@@ -1,10 +1,13 @@
 const API_URL = 'http://localhost:8000';
 let currentEmailFile = null;
+let currentPcapFile = null; 
 let eventSource = null;
 let currentlyExpandedAPI = null;
 let currentQRFile = null;
 let mapInstance = null;
 let currentTaskId = null;
+let pcapCharts = [];
+let currentPcapFilename = null;
 
 function switchTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(tab => {
@@ -370,31 +373,206 @@ async function analyzeQR() {
     }
 }
 
+function handlePcapFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    // Simple extension check
+    const validExts = ['.pcap', '.cap', '.pcapng'];
+    const isPcap = validExts.some(ext => file.name.toLowerCase().endsWith(ext));
+
+    if (!isPcap) {
+        showError('Please select a valid capture file (.pcap, .cap, .pcapng)');
+        input.value = '';
+        return;
+    }
+    
+    currentPcapFile = file;
+    
+    document.getElementById('pcapFileName').textContent = file.name;
+    document.getElementById('pcapFileInfo').classList.remove('hidden');
+    document.getElementById('analyzePcapBtn').classList.remove('hidden');
+    document.getElementById('pcapUploadArea').style.display = 'none';
+}
+
+function clearPcapFile() {
+    currentPcapFile = null;
+    document.getElementById('pcapFileInput').value = '';
+    document.getElementById('pcapFileInfo').classList.add('hidden');
+    document.getElementById('analyzePcapBtn').classList.add('hidden');
+    document.getElementById('pcapUploadArea').style.display = 'block';
+}
+
+async function analyzePcap() {
+    if (!currentPcapFile) return;
+    
+    const analyzeBtn = document.getElementById('analyzePcapBtn');
+    const btnText = document.getElementById('pcapBtnText');
+    const btnLoader = document.getElementById('pcapBtnLoader');
+    
+    resetUI();
+    setButtonLoading(analyzeBtn, btnText, btnLoader, true);
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', currentPcapFile);
+        
+        // Use pseudo-progress because PCAP analysis is currently synchronous/threaded but returns one-shot
+        showProgressModal();
+        updateProgress(30, "Parsing Packets...", []);
+
+        const response = await fetch(`${API_URL}/analyze/pcap`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        updateProgress(80, "Generating Statistics...", []);
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Analysis failed');
+        }
+        
+        const data = await response.json();
+        updateProgress(100, "Complete", []);
+        
+        setTimeout(() => {
+            hideProgressModal();
+            displayResults(data);
+        }, 500);
+        
+    } catch (error) {
+        hideProgressModal();
+        showError(`Error: ${error.message}`);
+    } finally {
+        setButtonLoading(analyzeBtn, btnText, btnLoader, false);
+    }
+}
+
+function renderCharts(data) {
+    // Dispose old charts
+    pcapCharts.forEach(chart => chart.dispose());
+    pcapCharts = [];
+
+    // 1. Protocol Distribution (Pie)
+    if (data.statistics && data.statistics.protocol_distribution) {
+        const protoData = Object.entries(data.statistics.protocol_distribution)
+            .map(([name, value]) => ({ value, name }))
+            .filter(item => item.value > 0);
+
+        const protoChart = echarts.init(document.getElementById('protocolChart'));
+        const protoOption = {
+            tooltip: { trigger: 'item' },
+            legend: { top: '5%', left: 'center' },
+            series: [{
+                name: 'Protocols',
+                type: 'pie',
+                radius: ['40%', '70%'],
+                avoidLabelOverlap: false,
+                itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+                label: { show: false, position: 'center' },
+                emphasis: { label: { show: true, fontSize: 40, fontWeight: 'bold' } },
+                data: protoData
+            }]
+        };
+        protoChart.setOption(protoOption);
+        pcapCharts.push(protoChart);
+    }
+
+    // 2. Time Flow (Line)
+    if (data.flow_analysis && data.flow_analysis.time_flow) {
+        const timeData = Object.entries(data.flow_analysis.time_flow)
+            .sort((a, b) => parseFloat(a[0]) - parseFloat(b[0])); // Sort by relative time
+        
+        const xData = timeData.map(item => item[0]);
+        const yData = timeData.map(item => item[1]);
+
+        const timeChart = echarts.init(document.getElementById('timeFlowChart'));
+        const timeOption = {
+            title: { text: 'Traffic Volume over Time', left: 'center' },
+            tooltip: { trigger: 'axis' },
+            xAxis: { type: 'category', data: xData, name: 'Seconds' },
+            yAxis: { type: 'value', name: 'Bytes' },
+            series: [{ data: yData, type: 'line', smooth: true, areaStyle: {} }]
+        };
+        timeChart.setOption(timeOption);
+        pcapCharts.push(timeChart);
+    }
+
+    // 3. Packet Lengths (Bar)
+    if (data.statistics && data.statistics.packet_lengths) {
+        const lenData = Object.entries(data.statistics.packet_lengths);
+        const xData = lenData.map(item => item[0]);
+        const yData = lenData.map(item => item[1]);
+
+        const lenChart = echarts.init(document.getElementById('packetLenChart'));
+        const lenOption = {
+            title: { text: 'Packet Size Distribution', left: 'center' },
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+            xAxis: { type: 'category', data: xData },
+            yAxis: { type: 'value' },
+            series: [{ name: 'Count', type: 'bar', data: yData, color: '#667eea' }]
+        };
+        lenChart.setOption(lenOption);
+        pcapCharts.push(lenChart);
+    }
+}
+
 function displayGeoMap(features) {
     const geoCard = document.getElementById('geoMapCard');
     const geoDetails = document.getElementById('geoDetails');
     
-    const path = features.geo_path;
-    if (!path || path.length === 0) {
+    // Check if it's PCAP data or URL data
+    let locations = [];
+    let isPcap = false;
+
+    if (features.geo_map && features.geo_map.ip_data) {
+        // PCAP Data Structure
+        isPcap = true;
+        locations = features.geo_map.ip_data;
+    } else if (features.geo_path) {
+        // URL Data Structure
+        locations = features.geo_path;
+    }
+
+    if (!locations || locations.length === 0) {
         geoCard.classList.add('hidden');
         return;
     }
 
     geoCard.classList.remove('hidden');
-
     let detailsHtml = '';
-    path.forEach((hop) => {
-        let color = hop.type === 'Final Destination' ? '#dc3545' : (hop.type === 'Initial' ? '#28a745' : '#3388ff');
-        detailsHtml += `
-            <div class="tech-item" style="border-left: 3px solid ${color}; padding-left: 10px;">
-                <span class="tech-label">Hop ${hop.hop} (${hop.type}):</span>
-                <span class="tech-value">
-                    ${hop.city}, ${hop.country} 
-                    <br><small style="color:#888;">${hop.domain} (${hop.ip})</small>
-                </span>
-            </div>
-        `;
-    });
+
+    if (isPcap) {
+        // Render PCAP Geo Table
+        locations.forEach(loc => {
+            detailsHtml += `
+                <div class="tech-item" style="border-left: 3px solid #3388ff;">
+                    <span class="tech-label">${loc.ip}</span>
+                    <span class="tech-value">
+                        ${loc.location} <br>
+                        <small>Traffic: ${loc.traffic} KB</small>
+                    </span>
+                </div>
+            `;
+        });
+    } else {
+        // Render URL Hop Chain
+        locations.forEach((hop) => {
+            let color = hop.type === 'Final Destination' ? '#dc3545' : (hop.type === 'Initial' ? '#28a745' : '#3388ff');
+            detailsHtml += `
+                <div class="tech-item" style="border-left: 3px solid ${color}; padding-left: 10px;">
+                    <span class="tech-label">Hop ${hop.hop} (${hop.type}):</span>
+                    <span class="tech-value">
+                        ${hop.city}, ${hop.country} 
+                        <br><small style="color:#888;">${hop.domain} (${hop.ip})</small>
+                    </span>
+                </div>
+            `;
+        });
+    }
+    
     geoDetails.innerHTML = detailsHtml;
 
     setTimeout(() => {
@@ -402,8 +580,16 @@ function displayGeoMap(features) {
             mapInstance.remove();
         }
 
-        const startLat = path[0].lat;
-        const startLon = path[0].lon;
+        // Default start
+        let startLat = 0, startLon = 0;
+        
+        if(isPcap) {
+             startLat = locations[0].coordinates[1];
+             startLon = locations[0].coordinates[0];
+        } else {
+             startLat = locations[0].lat;
+             startLon = locations[0].lon;
+        }
         
         mapInstance = L.map('phishingMap').setView([startLat, startLon], 2);
 
@@ -415,12 +601,21 @@ function displayGeoMap(features) {
         const latlngs = [];
         const bounds = L.latLngBounds();
 
-        path.forEach((hop) => {
-            const coords = [hop.lat, hop.lon];
+        locations.forEach((loc) => {
+            let coords, popupText, color;
+
+            if (isPcap) {
+                coords = [loc.coordinates[1], loc.coordinates[0]];
+                popupText = `<b>${loc.ip}</b><br>${loc.location}<br>Traffic: ${loc.traffic} KB`;
+                color = '#3388ff';
+            } else {
+                coords = [loc.lat, loc.lon];
+                popupText = `<b>${loc.domain}</b><br>${loc.city}, ${loc.country}`;
+                color = loc.type === 'Final Destination' ? '#dc3545' : (loc.type === 'Initial' ? '#28a745' : '#3388ff');
+            }
+
             latlngs.push(coords);
             bounds.extend(coords);
-            
-            let color = hop.type === 'Final Destination' ? '#dc3545' : (hop.type === 'Initial' ? '#28a745' : '#3388ff');
             
             L.circleMarker(coords, {
                 radius: 6,
@@ -429,19 +624,18 @@ function displayGeoMap(features) {
                 weight: 2,
                 opacity: 1,
                 fillOpacity: 0.8
-            }).addTo(mapInstance).bindPopup(`<b>${hop.domain}</b><br>${hop.city}, ${hop.country}`);
+            }).addTo(mapInstance).bindPopup(popupText);
         });
 
-        if (latlngs.length > 1) {
+        if (!isPcap && latlngs.length > 1) {
             L.polyline(latlngs, {
                 color: '#ffc107',
                 weight: 2,
                 dashArray: '5, 5'
             }).addTo(mapInstance);
-            
-            mapInstance.fitBounds(bounds, { padding: [50, 50] });
         }
         
+        mapInstance.fitBounds(bounds, { padding: [50, 50] });
         mapInstance.invalidateSize();
         
     }, 300); 
@@ -1082,61 +1276,147 @@ function showScreenshotModal(src) {
 
 function displayResults(data) {
     const resultsContainer = document.getElementById('resultsContainer');
-    const llm = data.llm_analysis;
-    const features = data.features;
+    const standardWrapper = document.getElementById('standardResultsWrapper');
+    const pcapWrapper = document.getElementById('pcapResultsWrapper');
+    const verdictBadge = document.getElementById('verdictBadge');
     
+    // Reset Views & State
+    standardWrapper.classList.add('hidden');
+    pcapWrapper.classList.add('hidden');
+    verdictBadge.classList.add('hidden');
+    document.getElementById('externalApiCard').classList.add('hidden');
+    document.getElementById('behavioralCard').classList.add('hidden');
+    document.getElementById('geoMapCard').classList.add('hidden');
+    document.getElementById('downloadPcapBtn').classList.add('hidden');
+    
+    currentPcapFilename = null;
+
     const typeBadge = document.getElementById('analysisTypeBadge');
     typeBadge.textContent = data.analysis_type.toUpperCase();
-    
-    const verdictBadge = document.getElementById('verdictBadge');
-    verdictBadge.textContent = llm.verdict;
-    verdictBadge.className = `verdict-badge verdict-${llm.verdict}`;
-    
-    document.getElementById('riskScore').textContent = llm.risk_score;
-    document.getElementById('confidence').textContent = `${Math.round(llm.confidence * 100)}%`;
-    
-    document.getElementById('reasoning').textContent = llm.reasoning;
-    
-    const indicatorsList = document.getElementById('indicatorsList');
-    indicatorsList.innerHTML = '';
-    if (llm.indicators && llm.indicators.length > 0) {
-        llm.indicators.forEach(indicator => {
-            const li = document.createElement('li');
-            li.textContent = indicator;
-            indicatorsList.appendChild(li);
-        });
+
+    // 1. PCAP-ONLY VIEW (Uploaded File)
+    if (data.analysis_type === 'pcap') {
+        pcapWrapper.classList.remove('hidden');
+        renderPcapStats(data.statistics, data.metadata);
+        renderCharts(data);
+        
+        if (data.geo_map && data.geo_map.ip_data) {
+            displayGeoMap({ geo_map: data.geo_map });
+        }
+
+    // 2. STANDARD URL/EMAIL/TEXT VIEW
     } else {
-        indicatorsList.innerHTML = '<li>No specific indicators detected</li>';
-    }
-    
-    displayTechnicalDetails(data.analysis_type, features, data.processing_time);
-    
-    resultsContainer.classList.remove('hidden');
-    if (data.features) {
-        displayGeoMap(data.features);
-    }
-    if (data.external_apis && Object.keys(data.external_apis).length > 0) {
-        displayExternalAPIResults(data.external_apis);
-    } else {
-        document.getElementById('externalApiCard').classList.add('hidden');
-    }
-    
-    if (data.behavioral_analysis) {
-        displayBehavioralResults(data.behavioral_analysis);
-    } else {
-        document.getElementById('behavioralCard').classList.add('hidden');
+        standardWrapper.classList.remove('hidden');
+        verdictBadge.classList.remove('hidden');
+        
+        const llm = data.llm_analysis;
+        const features = data.features;
+        
+        // Populate Standard Fields
+        verdictBadge.textContent = llm.verdict;
+        verdictBadge.className = `verdict-badge verdict-${llm.verdict}`;
+        document.getElementById('riskScore').textContent = llm.risk_score;
+        document.getElementById('confidence').textContent = `${Math.round(llm.confidence * 100)}%`;
+        document.getElementById('reasoning').textContent = llm.reasoning;
+        
+        const indicatorsList = document.getElementById('indicatorsList');
+        indicatorsList.innerHTML = '';
+        if (llm.indicators && llm.indicators.length > 0) {
+            llm.indicators.forEach(indicator => {
+                const li = document.createElement('li');
+                li.textContent = indicator;
+                indicatorsList.appendChild(li);
+            });
+        } else {
+            indicatorsList.innerHTML = '<li>No specific indicators detected</li>';
+        }
+        
+        displayTechnicalDetails(data.analysis_type, features, data.processing_time);
+        
+        // --- HYBRID: CHECK FOR EMBEDDED PCAP ANALYSIS ---
+        if (features.pcap_analysis) {
+            const pcapData = features.pcap_analysis;
+            
+            // Show the PCAP charts wrapper below the standard results
+            pcapWrapper.classList.remove('hidden');
+            
+            // Add a separator title
+            pcapWrapper.style.marginTop = '30px';
+            pcapWrapper.style.borderTop = '2px dashed #e0e0e0';
+            pcapWrapper.style.paddingTop = '20px';
+            
+            // Render Stats & Charts
+            renderPcapStats(pcapData.statistics, pcapData.metadata);
+            renderCharts(pcapData);
+            
+            // Enable Download Button
+            if (features.pcap_path) {
+                currentPcapFilename = features.pcap_path.split('/').pop();
+                document.getElementById('downloadPcapBtn').classList.remove('hidden');
+            }
+        }
+        // ------------------------------------------------
+        
+        if (data.features) {
+            displayGeoMap(data.features);
+        }
+        
+        if (data.external_apis && Object.keys(data.external_apis).length > 0) {
+            displayExternalAPIResults(data.external_apis);
+        }
+        
+        if (data.behavioral_analysis) {
+            displayBehavioralResults(data.behavioral_analysis);
+        }
     }
     
     resultsContainer.classList.remove('hidden');
     resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    const btn = document.getElementById('downloadReportBtn');
+    const reportBtn = document.getElementById('downloadReportBtn');
     if (data.task_id || currentTaskId) {
-        btn.classList.remove('hidden');
+        reportBtn.classList.remove('hidden');
         if (data.task_id) currentTaskId = data.task_id;
     } else {
-        btn.classList.add('hidden');
+        reportBtn.classList.add('hidden');
     }
+}
+
+// Helper to render PCAP stats grid (reused by both views)
+function renderPcapStats(stats, meta) {
+    const grid = document.getElementById('pcapStatsGrid');
+    if (!stats || !meta) return;
+
+    grid.innerHTML = `
+        <div class="tech-item">
+            <span class="tech-label">Total Packets:</span>
+            <span class="tech-value">${meta.packet_count}</span>
+        </div>
+        <div class="tech-item">
+            <span class="tech-label">Duration:</span>
+            <span class="tech-value">${meta.duration}s</span>
+        </div>
+        <div class="tech-item">
+            <span class="tech-label">Main Host IP:</span>
+            <span class="tech-value">${stats.host_ip}</span>
+        </div>
+        <div class="tech-item">
+            <span class="tech-label">Processing Time:</span>
+            <span class="tech-value">${meta.processing_time || 0}s</span>
+        </div>
+    `;
+}
+
+function downloadPcap() {
+    if (!currentPcapFilename) return;
+    
+    const url = `${API_URL}/pcap/${currentPcapFilename}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = currentPcapFilename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 }
 
 async function downloadReport() {
@@ -1993,6 +2273,36 @@ function handleDrop(e) {
     if (files.length > 0) {
         document.getElementById('qrFileInput').files = files;
         handleQRFile(document.getElementById('qrFileInput'));
+    }
+}
+
+const pcapUploadArea = document.getElementById('pcapUploadArea');
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    pcapUploadArea.addEventListener(eventName, preventDefaults, false);
+});
+
+['dragenter', 'dragover'].forEach(eventName => {
+    pcapUploadArea.addEventListener(eventName, () => {
+        pcapUploadArea.classList.add('drag-over');
+    }, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    pcapUploadArea.addEventListener(eventName, () => {
+        pcapUploadArea.classList.remove('drag-over');
+    }, false);
+});
+
+pcapUploadArea.addEventListener('drop', handlePcapDrop, false);
+
+function handlePcapDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    
+    if (files.length > 0) {
+        document.getElementById('pcapFileInput').files = files;
+        handlePcapFile(document.getElementById('pcapFileInput'));
     }
 }
 
