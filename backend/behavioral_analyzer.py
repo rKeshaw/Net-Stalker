@@ -9,6 +9,8 @@ from playwright.async_api import async_playwright, Browser, Page, Error as Playw
 from datetime import datetime
 from PIL import Image
 from qr_analyzer import QRCodeAnalyzer
+from scapy.all import AsyncSniffer, wrpcap
+from pcap_analyzer import PCAPAnalyzer
 
 class BehavioralAnalyzer:
     """Analyze URL behavior using headless browser"""
@@ -17,6 +19,9 @@ class BehavioralAnalyzer:
         self.timeout = timeout * 1000  
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         self.screenshots_dir = "/tmp/phishing_screenshots"
+        self.pcap_dir = "/tmp/phishing_pcaps"
+        os.makedirs(self.pcap_dir, exist_ok=True)
+        self.pcap_analyzer = PCAPAnalyzer()
         os.makedirs(self.screenshots_dir, exist_ok=True)
 
         self.honeypot_credentials = {
@@ -27,42 +32,41 @@ class BehavioralAnalyzer:
         self.qr_analyzer = QRCodeAnalyzer()
         
     async def analyze(self, url: str) -> Dict[str, Any]:
-        """Perform behavioral analysis on URL with robust lifecycle management"""
+        """Perform behavioral analysis on URL with active packet capture"""
         features = {
             'url': url,
             'analysis_timestamp': datetime.now().isoformat(),
             'success': False,
-            'behavioral_indicators': []
+            'behavioral_indicators': [],
+            'pcap_analysis': None  # Placeholder
         }
         
         playwright_mgr = None
         browser = None
+        sniffer = None # Scapy Sniffer instance
         
         try:
+            # 1. Start Packet Sniffer (Background)
+            # We capture strictly during the browsing session
+            url_hash = hashlib.md5(url.encode()).hexdigest()
+            pcap_filename = f"trace_{url_hash}_{int(time.time())}.pcap"
+            pcap_path = os.path.join(self.pcap_dir, pcap_filename)
+            
+            print(f"Starting packet capture: {pcap_path}")
+            sniffer = AsyncSniffer()
+            sniffer.start()
+            
+            # 2. Start Browser
             playwright_mgr = await async_playwright().start()
-
             ws_endpoint = os.getenv('PLAYWRIGHT_WS_ENDPOINT')
 
             if ws_endpoint:
-                print(f"Connecting to remote browser at {ws_endpoint}")
                 browser = await playwright_mgr.chromium.connect(ws_endpoint)
             else:
-                # Fallback (non-Docker)
-                print("Launching local browser")
                 browser = await playwright_mgr.chromium.launch(
                     headless=True,
                     args=['--disable-blink-features=AutomationControlled']
                 )
-            # browser = await playwright_mgr.chromium.launch(
-            #     headless=True,
-            #     args=[
-            #         '--disable-blink-features=AutomationControlled',
-            #         '--disable-dev-shm-usage', 
-            #         '--no-sandbox',           
-            #         '--disable-setuid-sandbox',
-            #         '--single-process'        
-            #     ]
-            # )
             
             context = await browser.new_context(
                 viewport={'width': 1280, 'height': 800},
@@ -72,6 +76,7 @@ class BehavioralAnalyzer:
             
             page = await context.new_page()
             
+            # Setup Listeners (Network, Console, etc.)
             network_data = {'requests': [], 'responses': [], 'failed_requests': [], 'redirects': [], 'form_submissions': []}
             page.on('request', lambda req: self._on_request(req, network_data))
             page.on('response', lambda res: self._on_response(res, network_data))
@@ -80,6 +85,7 @@ class BehavioralAnalyzer:
             console_logs = []
             page.on('console', lambda msg: console_logs.append({'type': msg.type, 'text': msg.text}))
             
+            # 3. Navigate
             start_time = time.time()
             try:
                 response = await page.goto(url, wait_until='domcontentloaded', timeout=self.timeout)
@@ -95,33 +101,51 @@ class BehavioralAnalyzer:
                 
             except PlaywrightError as e:
                 features['error'] = f"Navigation failed: {str(e)}"
-                return features 
+                # Even if navigation fails, we want to stop sniffing and see what happened
             
-            features.update(await self._extract_page_features(page))
+            # 4. Stop Sniffer & Save
+            if sniffer:
+                sniffer.stop()
+                # Write packets to disk
+                wrpcap(pcap_path, sniffer.results)
+                features['pcap_path'] = pcap_path
+                
+                # Analyze captured packets immediately
+                if os.path.exists(pcap_path):
+                    print("Analyzing captured packets...")
+                    pcap_results = await self.pcap_analyzer.analyze_file(pcap_path)
+                    features['pcap_analysis'] = pcap_results
 
-            form_submission_results = await self._submit_honeypot_forms(page, network_data)
-            features['honeypot_submission'] = form_submission_results
+            if features.get('success'):
+                features.update(await self._extract_page_features(page))
 
-            features['network'] = self._analyze_network(network_data, url)
-            features['screenshot_path'] = await self._take_screenshot(page, url)
-            features['behavioral_indicators'] = await self._detect_behavioral_anomalies(page)
-            
-            if features.get('screenshot_path'):
-                qr_results = await self.qr_analyzer.analyze_screenshot(
-                    features['screenshot_path'], 
-                    url
-                )
-                features['qr_analysis'] = qr_results
-                if qr_results.get('indicators'):
-                    features['behavioral_indicators'].extend(qr_results['indicators'])
-                if qr_results.get('phishing_detected'):
-                    features['behavioral_indicators'].append("CRITICAL: Malicious QR Code Detected")
-                    
-            features['console_errors'] = len([l for l in console_logs if l['type'] == 'error'])
+                form_submission_results = await self._submit_honeypot_forms(page, network_data)
+                features['honeypot_submission'] = form_submission_results
+
+                features['network'] = self._analyze_network(network_data, url)
+                features['screenshot_path'] = await self._take_screenshot(page, url)
+                features['behavioral_indicators'] = await self._detect_behavioral_anomalies(page)
+                
+                # QR Analysis Integration
+                if features.get('screenshot_path'):
+                    qr_results = await self.qr_analyzer.analyze_screenshot(
+                        features['screenshot_path'], 
+                        url
+                    )
+                    features['qr_analysis'] = qr_results
+                    if qr_results.get('indicators'):
+                        features['behavioral_indicators'].extend(qr_results['indicators'])
+                    if qr_results.get('phishing_detected'):
+                        features['behavioral_indicators'].append("CRITICAL: Malicious QR Code Detected")
+                        
+                features['console_errors'] = len([l for l in console_logs if l['type'] == 'error'])
             
         except Exception as e:
             features['error'] = f"System Error: {str(e)}"
             features['success'] = False
+            # Ensure sniffer stops on error
+            if sniffer and sniffer.running:
+                sniffer.stop()
         finally:
             if browser:
                 await browser.close()
