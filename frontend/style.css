@@ -2397,39 +2397,96 @@ footer {
 }
 
 #pcapUploadArea {
-    border: 3px dashed #e0e0e0;
-    border-radius: 12px;
-    padding: 40px;
+    border: 2px dashed #b9c2d0;
+    border-radius: 14px;
+    padding: 42px;
     text-align: center;
     cursor: pointer;
-    transition: all 0.3s;
+    transition: all 0.25s ease;
     margin-bottom: 20px;
+    background: linear-gradient(180deg, #ffffff 0%, #f7f9ff 100%);
 }
 
 #pcapUploadArea:hover {
     border-color: #667eea;
-    background: #f9f9ff;
+    background: #f1f5ff;
+    transform: translateY(-1px);
 }
 
 #protocolChart, #timeFlowChart, #packetLenChart {
-    margin: 0 auto;
+    margin: 0;
+    width: 100% !important;
+    max-width: 100%;
+    min-height: 340px;
 }
 
 #pcapResultsWrapper {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    align-items: stretch;
+    width: 100%;
 }
 
-@media (min-width: 900px) {
+#pcapResultsWrapper.embedded-pcap {
+    margin-top: 30px;
+    border-top: 2px dashed #e0e0e0;
+    padding-top: 20px;
+}
+
+#pcapResultsWrapper .result-card {
+    min-height: 100%;
+    border-radius: 14px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    border: 1px solid #e8edf5;
+    width: 100%;
+    overflow: hidden;
+}
+
+#pcapStatsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+#pcapStatsGrid .tech-item {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    border: 1px solid #e3eaf5;
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+@media (min-width: 1024px) {
     #pcapResultsWrapper {
-        grid-template-columns: 1fr 1fr;
+        gap: 20px;
     }
-    
-    #pcapResultsWrapper .result-card:first-child, /* Stats */
-    #pcapResultsWrapper .result-card:nth-child(3) /* Time Flow */ {
-        grid-column: span 2;
-    }
+}
+
+.api-summary-meta {
+    margin-top: 10px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.api-summary-meta span {
+    font-size: 0.8rem;
+    color: #45556c;
+    background: #eef3ff;
+    border: 1px solid #d8e2ff;
+    border-radius: 999px;
+    padding: 4px 10px;
+}
+
+.api-result-card {
+    border-radius: 12px;
+    border: 1px solid #e5ebf5;
+    box-shadow: 0 6px 16px rgba(16, 24, 40, 0.05);
+}
+
+.api-result-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(102, 126, 234, 0.12);
 }
 
 .action-btn.secondary {
@@ -2457,4 +2514,103 @@ footer {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+
+.toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 14px;
+  color: #d1d5db;
+  font-size: 0.9rem;
+}
+
+.toggle-group input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+
+.deep-scan-container {
+    margin-top: 18px;
+    border-top: 1px dashed #d6deeb;
+    padding-top: 14px;
+}
+
+.deep-scan-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fbff;
+    margin-bottom: 10px;
+}
+
+.deep-scan-url {
+    font-size: 0.9rem;
+    color: #1e293b;
+    word-break: break-all;
+}
+
+@media (max-width: 768px) {
+    .deep-scan-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+
+.geo-collapsible {
+    width: 100%;
+}
+
+.geo-collapse-toggle {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #eef4ff;
+    border: 1px solid #d9e4ff;
+    border-radius: 10px;
+    color: #2b4d8a;
+    font-weight: 600;
+    padding: 10px 12px;
+    cursor: pointer;
+}
+
+.geo-collapse-toggle .toggle-icon {
+    transition: transform 0.2s ease;
+}
+
+.geo-collapse-toggle.expanded .toggle-icon {
+    transform: rotate(90deg);
+}
+
+.geo-collapse-content {
+    max-height: 420px;
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+}
+
+.geo-collapse-content.collapsed {
+    max-height: 0;
+}
+
+.geo-ip-scroll-list {
+    margin-top: 10px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+.geo-ip-scroll-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.geo-ip-scroll-list::-webkit-scrollbar-thumb {
+    background: #b3c4e6;
+    border-radius: 999px;
 }

@@ -4,9 +4,10 @@ import json
 import asyncio
 import os
 import logging
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Request
+import uuid
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Request, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from pydantic import BaseModel, field_validator
 from contextlib import asynccontextmanager
 from analyzer import BasicPhishingAnalyzer
@@ -20,6 +21,10 @@ from report_generator import ForensicReportGenerator
 from fastapi.responses import FileResponse
 from pcap_analyzer import PCAPAnalyzer
 import shutil
+from logging_config import get_logger, request_id_ctx, setup_logging
+
+setup_logging()
+logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -29,7 +34,7 @@ async def lifespan(app: FastAPI):
             try:
                 task_manager.cleanup_old_tasks(max_age_minutes=60)
             except Exception as e:
-                logging.error(f"Error during background task cleanup: {e}")
+                logger.exception("Error during background task cleanup")
     
     cleanup_task = asyncio.create_task(cleanup_tasks())
     yield  
@@ -56,6 +61,7 @@ class URLRequest(BaseModel):
     use_external_apis: bool = True
     async_mode: bool = True
     enable_behavioral: bool = True
+    enable_live_capture: bool = True
     
     @field_validator('url')
     @classmethod
@@ -137,7 +143,36 @@ def process_screenshot_url(features, base_url):
         features["screenshot_url"] = f"{base}/screenshot/{filename}"
     return features
 
-async def analyze_url_background(task_id: str, url: str, use_external_apis: bool, enable_behavioral: bool, base_url: str):
+def extract_urls_from_text(text: str, max_urls: int = 5):
+    url_pattern = r"http[s]?://[^\s<>\"'\)]+"
+    urls = re.findall(url_pattern, text or "")
+    unique = []
+    for u in urls:
+        clean = u.strip(".,);]'\"")
+        if clean not in unique:
+            unique.append(clean)
+        if len(unique) >= max_urls:
+            break
+    return unique
+
+
+def queue_url_deep_scans(urls, background_tasks: BackgroundTasks, base_url: str, max_urls: int = 3):
+    tasks = []
+    for url in urls[:max_urls]:
+        task_id = task_manager.create_task("url", url)
+        background_tasks.add_task(
+            analyze_url_background,
+            task_id,
+            url,
+            True,
+            True,
+            True,
+            base_url,
+        )
+        tasks.append({"url": url, "task_id": task_id})
+    return tasks
+
+async def analyze_url_background(task_id: str, url: str, use_external_apis: bool, enable_behavioral: bool, enable_live_capture: bool, base_url: str):
     """Background task for URL analysis with behavioral analysis"""
     try:
         await task_manager.update_task_progress(task_id, 5, "Starting analysis...")
@@ -155,7 +190,7 @@ async def analyze_url_background(task_id: str, url: str, use_external_apis: bool
         behavioral_features = {}
         if enable_behavioral:
             await task_manager.update_task_progress(task_id, 30, "Running behavioral analysis...")
-            behavioral_features = await behavioral_analyzer.analyze(url)
+            behavioral_features = await behavioral_analyzer.analyze(url, enable_live_capture=enable_live_capture)
             behavioral_features = process_screenshot_url(behavioral_features, base_url)
             await task_manager.update_task_progress(task_id, 55, "Behavioral analysis completed")
         else:
@@ -195,6 +230,7 @@ async def analyze_url_background(task_id: str, url: str, use_external_apis: bool
         await task_manager.complete_task(task_id, result)
         
     except Exception as e:
+        logger.exception("Background URL analysis failed", extra={"task_id": task_id, "url": url})
         await task_manager.fail_task(task_id, str(e))
 
 @app.post("/analyze/url")
@@ -210,6 +246,7 @@ async def analyze_url(request: URLRequest, background_tasks: BackgroundTasks, fa
             request.url, 
             request.use_external_apis,
             request.enable_behavioral,
+            request.enable_live_capture,
             str(fastapi_req.base_url)
         )
         
@@ -232,7 +269,7 @@ async def analyze_url(request: URLRequest, background_tasks: BackgroundTasks, fa
             
             behavioral_features = {}
             if request.enable_behavioral:
-                behavioral_features = await behavioral_analyzer.analyze(url_str)
+                behavioral_features = await behavioral_analyzer.analyze(url_str, enable_live_capture=request.enable_live_capture)
                 behavioral_features = process_screenshot_url(behavioral_features, str(fastapi_req.base_url))
             
             external_results = {}
@@ -263,11 +300,15 @@ async def analyze_url(request: URLRequest, background_tasks: BackgroundTasks, fa
         except HTTPException:
             raise
         except Exception as e:
+            logger.exception("Synchronous URL analysis failed", extra={"url": url_str})
             raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/analyze/qr")
 async def analyze_qr(
     file: UploadFile = File(...), 
+    use_external_apis: bool = Form(True),
+    enable_behavioral: bool = Form(True),
+    enable_live_capture: bool = Form(True),
     background_tasks: BackgroundTasks = None,
     fastapi_req: Request = None
 ):
@@ -312,8 +353,9 @@ async def analyze_qr(
                 analyze_url_background, 
                 task_id, 
                 target_url, 
-                True, 
-                True, 
+                use_external_apis,
+                enable_behavioral,
+                enable_live_capture,
                 str(fastapi_req.base_url)
             )
             
@@ -347,6 +389,7 @@ async def analyze_qr(
             }
 
     except Exception as e:
+        logger.exception("QR analysis failed", extra={"file_name": file.filename if file else None})
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/screenshot/{filename}")
@@ -413,7 +456,7 @@ async def stream_task_progress(task_id: str):
     )
 
 @app.post("/analyze/email")
-async def analyze_email(file: UploadFile = File(...)):
+async def analyze_email(file: UploadFile = File(...), background_tasks: BackgroundTasks = None, fastapi_req: Request = None):
     """Analyze an email file (.eml) for phishing indicators"""
     start_time = time.time()
     
@@ -436,6 +479,12 @@ async def analyze_email(file: UploadFile = File(...)):
         )
         
         processing_time = time.time() - start_time
+
+        deep_scan_tasks = []
+        if background_tasks and fastapi_req:
+            links = features.get("links", []) if isinstance(features, dict) else []
+            deep_scan_tasks = queue_url_deep_scans(links, background_tasks, str(fastapi_req.base_url), max_urls=3)
+            features["deep_scan_links_count"] = len(deep_scan_tasks)
         
         return {
             "analysis_type": "email",
@@ -443,6 +492,7 @@ async def analyze_email(file: UploadFile = File(...)):
             "features": features,
             "llm_analysis": llm_result,
             "external_apis": {},
+            "url_deep_scans": deep_scan_tasks,
             "processing_time": round(processing_time, 2),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
@@ -450,16 +500,17 @@ async def analyze_email(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Email analysis failed", extra={"file_name": file.filename if file else None})
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/analyze/text")
-async def analyze_text(request: TextAnalysisRequest):
+async def analyze_text(request: TextAnalysisRequest, background_tasks: BackgroundTasks, fastapi_req: Request):
     """Analyze raw text for phishing indicators"""
     start_time = time.time()
     
     try:
         text = request.text
-        
+        extracted_urls = extract_urls_from_text(text, max_urls=5)
         features = {
             'text': text[:2000],
             'length': len(text),
@@ -467,13 +518,16 @@ async def analyze_text(request: TextAnalysisRequest):
                                    if kw.lower() in text.lower()),
             'financial_keywords': sum(1 for kw in ['bank', 'account', 'payment', 'credit'] 
                                      if kw.lower() in text.lower()),
-            'has_links': bool(re.findall(r'http[s]?://\S+', text)), 
-            'link_count': len(re.findall(r'http[s]?://\S+', text))
+            'has_links': bool(extracted_urls), 
+            'link_count': len(extracted_urls),
+            'extracted_urls': extracted_urls
         }
         
         llm_result = await asyncio.to_thread(llm_analyzer.analyze_text, text, features)
         
         processing_time = time.time() - start_time
+        deep_scan_tasks = queue_url_deep_scans(features.get('extracted_urls', []), background_tasks, str(fastapi_req.base_url), max_urls=3)
+        features['deep_scan_links_count'] = len(deep_scan_tasks)
         
         return {
             "analysis_type": "text",
@@ -481,6 +535,7 @@ async def analyze_text(request: TextAnalysisRequest):
             "features": features,
             "llm_analysis": llm_result,
             "external_apis": {},
+            "url_deep_scans": deep_scan_tasks,
             "processing_time": round(processing_time, 2),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
@@ -488,17 +543,17 @@ async def analyze_text(request: TextAnalysisRequest):
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Text analysis failed")
         raise HTTPException(status_code=500, detail=str(e))
     
 @app.post("/analyze/pcap")
 async def analyze_pcap(file: UploadFile = File(...)):
     """Analyze a PCAP file for network forensics"""
+    temp_path = None
     try:
-        # Validate file type
         if not file.filename.endswith(('.pcap', '.cap', '.pcapng')):
              raise HTTPException(status_code=400, detail="Only .pcap, .cap, or .pcapng files are supported")
 
-        # Save to temporary file
         temp_dir = "/tmp/phishing_pcaps"
         os.makedirs(temp_dir, exist_ok=True)
         temp_path = os.path.join(temp_dir, f"upload_{int(time.time())}_{file.filename}")
@@ -506,19 +561,24 @@ async def analyze_pcap(file: UploadFile = File(...)):
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Run Analysis
         result = await pcap_analyzer.analyze_file(temp_path)
-        
-        # Cleanup 
-        # os.remove(temp_path)
 
         if result.get("status") == "failed":
              raise HTTPException(status_code=500, detail=result.get("error"))
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.exception("PCAP analysis failed", extra={"file_name": file.filename if file else None})
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                logger.warning("Failed to remove temporary PCAP file", extra={"file_name": temp_path})
 
 @app.get("/report/{task_id}/download")
 async def download_report(task_id: str):
@@ -569,7 +629,27 @@ async def download_pcap(filename: str):
 
 @app.exception_handler(422)
 async def validation_exception_handler(request, exc):
-    return {"detail": "Invalid input format. Please check your request."}
+    logger.warning("Validation error", extra={"url": str(request.url)})
+    return JSONResponse(status_code=422, content={"detail": "Invalid input format. Please check your request."})
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    token = request_id_ctx.set(request_id)
+    start = time.time()
+
+    try:
+        response = await call_next(request)
+        duration_ms = round((time.time() - start) * 1000, 2)
+        logger.info("request.completed", extra={"url": str(request.url), "status_code": response.status_code, "duration_ms": duration_ms})
+        response.headers["X-Request-ID"] = request_id
+        return response
+    except Exception:
+        logger.exception("request.failed", extra={"url": str(request.url), "method": request.method})
+        raise
+    finally:
+        request_id_ctx.reset(token)
 
 if __name__ == "__main__":
     import uvicorn

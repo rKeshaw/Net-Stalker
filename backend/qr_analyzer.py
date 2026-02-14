@@ -1,3 +1,6 @@
+from logging_config import get_logger
+logger = get_logger(__name__)
+
 import cv2
 import numpy as np
 from pyzbar import pyzbar
@@ -88,7 +91,7 @@ class QRCodeAnalyzer:
                     'polygon': obj.polygon
                 })
         except Exception as e:
-            print(f"QR Extraction Warning: {e}")
+            logger.warning(f"QR Extraction Warning: {e}")
         return codes
 
     async def _analyze_single_qr(self, qr_data: Dict, page_url: str, index: int) -> Dict[str, Any]:

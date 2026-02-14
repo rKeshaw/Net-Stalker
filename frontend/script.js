@@ -20,7 +20,6 @@ function switchTab(tabName) {
     document.getElementById(`${tabName}Tab`).classList.add('active');
     event.target.classList.add('active');
     
-    document.getElementById('resultsContainer').classList.add('hidden');
     document.getElementById('errorContainer').classList.add('hidden');
 }
 
@@ -52,7 +51,9 @@ async function analyzeURL() {
             body: JSON.stringify({ 
                 url: url,
                 use_external_apis: true,
-                async_mode: true  
+                async_mode: true,
+                enable_behavioral: document.getElementById('urlEnableBehavioral').checked,
+                enable_live_capture: document.getElementById('urlEnableLiveCapture').checked
             })
         });
         
@@ -341,6 +342,9 @@ async function analyzeQR() {
     try {
         const formData = new FormData();
         formData.append('file', currentQRFile);
+        formData.append('use_external_apis', 'true');
+        formData.append('enable_behavioral', document.getElementById('qrEnableBehavioral').checked);
+        formData.append('enable_live_capture', document.getElementById('qrEnableLiveCapture').checked);
         
         const response = await fetch(`${API_URL}/analyze/qr`, {
             method: 'POST',
@@ -449,6 +453,12 @@ async function analyzePcap() {
     }
 }
 
+function resizePcapCharts() {
+    pcapCharts.forEach(chart => {
+        try { chart.resize(); } catch (e) {}
+    });
+}
+
 function renderCharts(data) {
     // Dispose old charts
     pcapCharts.forEach(chart => chart.dispose());
@@ -517,6 +527,10 @@ function renderCharts(data) {
         lenChart.setOption(lenOption);
         pcapCharts.push(lenChart);
     }
+
+    requestAnimationFrame(() => {
+        setTimeout(resizePcapCharts, 80);
+    });
 }
 
 function displayGeoMap(features) {
@@ -545,9 +559,8 @@ function displayGeoMap(features) {
     let detailsHtml = '';
 
     if (isPcap) {
-        // Render PCAP Geo Table
-        locations.forEach(loc => {
-            detailsHtml += `
+        // Render PCAP Geo Table in collapsed, scrollable section
+        const rows = locations.map(loc => `
                 <div class="tech-item" style="border-left: 3px solid #3388ff;">
                     <span class="tech-label">${loc.ip}</span>
                     <span class="tech-value">
@@ -555,8 +568,19 @@ function displayGeoMap(features) {
                         <small>Traffic: ${loc.traffic} KB</small>
                     </span>
                 </div>
-            `;
-        });
+            `).join('');
+
+        detailsHtml = `
+            <div class="geo-collapsible">
+                <button id="pcapIpToggleBtn" class="geo-collapse-toggle" onclick="toggleInlineSection('pcapIpListSection', 'pcapIpToggleBtn')">
+                    <span>🧭 Captured IP Endpoints (${locations.length})</span>
+                    <span class="toggle-icon">▶</span>
+                </button>
+                <div id="pcapIpListSection" class="geo-collapse-content collapsed">
+                    <div class="geo-ip-scroll-list">${rows}</div>
+                </div>
+            </div>
+        `;
     } else {
         // Render URL Hop Chain
         locations.forEach((hop) => {
@@ -742,6 +766,21 @@ function createBehavioralDetails(behavioral) {
 
     if (behavioral.qr_analysis) {
         html += createQRCodeSection(behavioral.qr_analysis);
+    }
+
+    if (behavioral.packet_capture_enabled) {
+        const statusColor = behavioral.packet_capture_status === 'completed' ? '#198754' :
+                           behavioral.packet_capture_status === 'running' ? '#0d6efd' :
+                           behavioral.packet_capture_status === 'failed' ? '#dc3545' : '#6c757d';
+        html += `
+            <div class="behavioral-section">
+                <h4>📡 Live Packet Capture</h4>
+                <div style="padding: 10px; border-radius: 6px; background: #f8f9fa; border-left: 4px solid ${statusColor};">
+                    <div><strong>Status:</strong> ${behavioral.packet_capture_status || 'unknown'}</div>
+                    ${behavioral.packet_capture_error ? `<div style="margin-top: 6px; color: #dc3545;"><strong>Error:</strong> ${behavioral.packet_capture_error}</div>` : ''}
+                </div>
+            </div>
+        `;
     }
     
     if (behavioral.behavioral_indicators && behavioral.behavioral_indicators.length > 0) {
@@ -1283,6 +1322,8 @@ function displayResults(data) {
     // Reset Views & State
     standardWrapper.classList.add('hidden');
     pcapWrapper.classList.add('hidden');
+    pcapWrapper.classList.remove('embedded-pcap');
+    pcapWrapper.removeAttribute('style');
     verdictBadge.classList.add('hidden');
     document.getElementById('externalApiCard').classList.add('hidden');
     document.getElementById('behavioralCard').classList.add('hidden');
@@ -1331,27 +1372,24 @@ function displayResults(data) {
             indicatorsList.innerHTML = '<li>No specific indicators detected</li>';
         }
         
-        displayTechnicalDetails(data.analysis_type, features, data.processing_time);
+        displayTechnicalDetails(data.analysis_type, features, data.processing_time, data);
         
         // --- HYBRID: CHECK FOR EMBEDDED PCAP ANALYSIS ---
-        if (features.pcap_analysis) {
-            const pcapData = features.pcap_analysis;
-            
-            // Show the PCAP charts wrapper below the standard results
+        const behavioral = data.behavioral_analysis || {};
+        const embeddedPcap = behavioral.pcap_analysis || features.pcap_analysis;
+
+        if (embeddedPcap && embeddedPcap.status === 'success') {
             pcapWrapper.classList.remove('hidden');
-            
-            // Add a separator title
-            pcapWrapper.style.marginTop = '30px';
-            pcapWrapper.style.borderTop = '2px dashed #e0e0e0';
-            pcapWrapper.style.paddingTop = '20px';
-            
-            // Render Stats & Charts
-            renderPcapStats(pcapData.statistics, pcapData.metadata);
-            renderCharts(pcapData);
-            
-            // Enable Download Button
-            if (features.pcap_path) {
-                currentPcapFilename = features.pcap_path.split('/').pop();
+
+            pcapWrapper.classList.add('embedded-pcap');
+
+            renderPcapStats(embeddedPcap.statistics, embeddedPcap.metadata);
+            renderCharts(embeddedPcap);
+
+            const pcapPath = behavioral.pcap_path || features.pcap_path;
+            if (pcapPath) {
+                currentPcapFilename = pcapPath.split('/').pop();
+
                 document.getElementById('downloadPcapBtn').classList.remove('hidden');
             }
         }
@@ -1474,6 +1512,10 @@ function displayExternalAPIResults(apiData) {
                 </div>
             </div>
             <p style="margin: 10px 0 0 0; color: #666;">${apiData.summary || 'No summary available'}</p>
+            <div class="api-summary-meta">
+                <span><strong>${(apiData.results || []).length}</strong> source(s) queried</span>
+                <span><strong>${(apiData.results || []).filter(r => r && r.available && !r.error).length}</strong> source(s) available</span>
+            </div>
         `;
     } else {
         summaryDiv.innerHTML = `
@@ -2054,7 +2096,7 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function displayTechnicalDetails(type, features, processingTime) {
+function displayTechnicalDetails(type, features, processingTime, fullResult = null) {
     const container = document.getElementById('technicalDetailsContent');
     container.innerHTML = '';
     
@@ -2166,11 +2208,60 @@ function displayTechnicalDetails(type, features, processingTime) {
             </div>
         `;
     }
+
+    const deepScans = (fullResult && fullResult.url_deep_scans) ? fullResult.url_deep_scans : [];
+    if ((type === 'email' || type === 'text') && deepScans.length > 0) {
+        const scanHtml = deepScans.map((scan, idx) => `
+            <div class="deep-scan-item">
+                <div>
+                    <div class="deep-scan-url">${scan.url}</div>
+                    <small style="color:#64748b;">Task ID: ${scan.task_id}</small>
+                </div>
+                <button class="action-btn secondary deep-scan-btn" data-task-id="${scan.task_id}">Analyze URL #${idx + 1}</button>
+            </div>
+        `).join('');
+
+        container.innerHTML += `
+            <div class="deep-scan-container">
+                <h4>🔎 Detected URLs (Background Deep Scan)</h4>
+                <p class="help-text" style="margin-bottom:10px;">Run URL analysis with live progress for links extracted from this ${type} content.</p>
+                ${scanHtml}
+            </div>
+        `;
+
+        container.querySelectorAll('.deep-scan-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const taskId = btn.getAttribute('data-task-id');
+                showProgressModal();
+                await streamTaskProgress(taskId);
+            });
+        });
+    }
 }
 
 function resetUI() {
     document.getElementById('resultsContainer').classList.add('hidden');
     document.getElementById('errorContainer').classList.add('hidden');
+}
+
+function resetResults() {
+    document.getElementById('resultsContainer').classList.add('hidden');
+    document.getElementById('errorContainer').classList.add('hidden');
+    document.getElementById('downloadReportBtn').classList.add('hidden');
+    document.getElementById('downloadPcapBtn').classList.add('hidden');
+
+    currentTaskId = null;
+    currentPcapFilename = null;
+
+    if (mapInstance) {
+        mapInstance.remove();
+        mapInstance = null;
+    }
+
+    pcapCharts.forEach(chart => {
+        try { chart.dispose(); } catch (e) {}
+    });
+    pcapCharts = [];
 }
 
 function setButtonLoading(button, textSpan, loaderSpan, isLoading) {
@@ -2194,6 +2285,14 @@ function showError(message) {
     setTimeout(() => {
         errorContainer.classList.add('hidden');
     }, 5000);
+}
+
+function toggleInlineSection(sectionId, buttonId) {
+    const section = document.getElementById(sectionId);
+    const btn = document.getElementById(buttonId);
+    if (!section || !btn) return;
+    section.classList.toggle('collapsed');
+    btn.classList.toggle('expanded');
 }
 
 function toggleSection(sectionId) {
@@ -2311,3 +2410,5 @@ document.getElementById('urlInput').addEventListener('keypress', function(event)
         analyzeURL();
     }
 });
+
+window.addEventListener('resize', resizePcapCharts);

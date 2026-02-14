@@ -10,7 +10,11 @@ from datetime import datetime
 from PIL import Image
 from qr_analyzer import QRCodeAnalyzer
 from scapy.all import AsyncSniffer, wrpcap
+from scapy.error import Scapy_Exception
 from pcap_analyzer import PCAPAnalyzer
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 class BehavioralAnalyzer:
     """Analyze URL behavior using headless browser"""
@@ -31,32 +35,40 @@ class BehavioralAnalyzer:
         }
         self.qr_analyzer = QRCodeAnalyzer()
         
-    async def analyze(self, url: str) -> Dict[str, Any]:
-        """Perform behavioral analysis on URL with active packet capture"""
+    async def analyze(self, url: str, enable_live_capture: bool = True) -> Dict[str, Any]:
+        """Perform behavioral analysis on URL with optional active packet capture."""
         features = {
             'url': url,
             'analysis_timestamp': datetime.now().isoformat(),
             'success': False,
             'behavioral_indicators': [],
-            'pcap_analysis': None  # Placeholder
+            'pcap_analysis': None,
+            'packet_capture_enabled': enable_live_capture,
+            'packet_capture_status': 'disabled' if not enable_live_capture else 'not_started'
         }
-        
+
         playwright_mgr = None
         browser = None
-        sniffer = None # Scapy Sniffer instance
-        
+        sniffer = None
+        pcap_path = None
+
         try:
-            # 1. Start Packet Sniffer (Background)
-            # We capture strictly during the browsing session
-            url_hash = hashlib.md5(url.encode()).hexdigest()
-            pcap_filename = f"trace_{url_hash}_{int(time.time())}.pcap"
-            pcap_path = os.path.join(self.pcap_dir, pcap_filename)
-            
-            print(f"Starting packet capture: {pcap_path}")
-            sniffer = AsyncSniffer()
-            sniffer.start()
-            
-            # 2. Start Browser
+            if enable_live_capture:
+                url_hash = hashlib.md5(url.encode()).hexdigest()
+                pcap_filename = f"trace_{url_hash}_{int(time.time())}.pcap"
+                pcap_path = os.path.join(self.pcap_dir, pcap_filename)
+
+                try:
+                    sniffer = AsyncSniffer(store=True)
+                    sniffer.start()
+                    features['packet_capture_status'] = 'running'
+                    logger.info('Live packet capture started', extra={'url': url, 'file_name': pcap_filename})
+                except (PermissionError, Scapy_Exception, OSError) as capture_error:
+                    features['packet_capture_status'] = 'failed'
+                    features['packet_capture_error'] = str(capture_error)
+                    features['behavioral_indicators'].append('Packet capture unavailable (permission or interface limitation).')
+                    logger.warning('Live packet capture could not start', extra={'url': url, 'error': str(capture_error)})
+
             playwright_mgr = await async_playwright().start()
             ws_endpoint = os.getenv('PLAYWRIGHT_WS_ENDPOINT')
 
@@ -67,93 +79,90 @@ class BehavioralAnalyzer:
                     headless=True,
                     args=['--disable-blink-features=AutomationControlled']
                 )
-            
+
             context = await browser.new_context(
                 viewport={'width': 1280, 'height': 800},
                 user_agent=self.user_agent,
-                ignore_https_errors=True 
+                ignore_https_errors=True
             )
-            
+
             page = await context.new_page()
-            
-            # Setup Listeners (Network, Console, etc.)
+
             network_data = {'requests': [], 'responses': [], 'failed_requests': [], 'redirects': [], 'form_submissions': []}
             page.on('request', lambda req: self._on_request(req, network_data))
             page.on('response', lambda res: self._on_response(res, network_data))
             page.on('requestfailed', lambda req: self._on_request_failed(req, network_data))
-            
+
             console_logs = []
             page.on('console', lambda msg: console_logs.append({'type': msg.type, 'text': msg.text}))
-            
-            # 3. Navigate
+
             start_time = time.time()
             try:
                 response = await page.goto(url, wait_until='domcontentloaded', timeout=self.timeout)
                 try:
                     await page.wait_for_load_state('networkidle', timeout=5000)
-                except:
-                    pass 
-                
+                except Exception:
+                    pass
+
                 features['load_time'] = round(time.time() - start_time, 2)
                 features['success'] = True
                 features['final_url'] = page.url
                 features['status_code'] = response.status if response else None
-                
+
             except PlaywrightError as e:
                 features['error'] = f"Navigation failed: {str(e)}"
-                # Even if navigation fails, we want to stop sniffing and see what happened
-            
-            # 4. Stop Sniffer & Save
-            if sniffer:
-                sniffer.stop()
-                # Write packets to disk
-                wrpcap(pcap_path, sniffer.results)
-                features['pcap_path'] = pcap_path
-                
-                # Analyze captured packets immediately
-                if os.path.exists(pcap_path):
-                    print("Analyzing captured packets...")
-                    pcap_results = await self.pcap_analyzer.analyze_file(pcap_path)
-                    features['pcap_analysis'] = pcap_results
 
             if features.get('success'):
                 features.update(await self._extract_page_features(page))
-
                 form_submission_results = await self._submit_honeypot_forms(page, network_data)
                 features['honeypot_submission'] = form_submission_results
-
                 features['network'] = self._analyze_network(network_data, url)
                 features['screenshot_path'] = await self._take_screenshot(page, url)
                 features['behavioral_indicators'] = await self._detect_behavioral_anomalies(page)
-                
-                # QR Analysis Integration
+
                 if features.get('screenshot_path'):
-                    qr_results = await self.qr_analyzer.analyze_screenshot(
-                        features['screenshot_path'], 
-                        url
-                    )
+                    qr_results = await self.qr_analyzer.analyze_screenshot(features['screenshot_path'], url)
                     features['qr_analysis'] = qr_results
                     if qr_results.get('indicators'):
                         features['behavioral_indicators'].extend(qr_results['indicators'])
                     if qr_results.get('phishing_detected'):
                         features['behavioral_indicators'].append("CRITICAL: Malicious QR Code Detected")
-                        
+
                 features['console_errors'] = len([l for l in console_logs if l['type'] == 'error'])
-            
+
         except Exception as e:
             features['error'] = f"System Error: {str(e)}"
             features['success'] = False
-            # Ensure sniffer stops on error
-            if sniffer and sniffer.running:
-                sniffer.stop()
+            logger.exception('Behavioral analysis failed', extra={'url': url})
         finally:
+            if sniffer and getattr(sniffer, 'running', False):
+                try:
+                    sniffer.stop()
+                    if pcap_path:
+                        wrpcap(pcap_path, sniffer.results)
+                        features['pcap_path'] = pcap_path
+                        features['packet_capture_status'] = 'completed'
+
+                        if os.path.exists(pcap_path):
+                            pcap_results = await self.pcap_analyzer.analyze_file(pcap_path)
+                            features['pcap_analysis'] = pcap_results
+                except PermissionError as capture_permission_error:
+                    features['packet_capture_status'] = 'failed'
+                    features['packet_capture_error'] = str(capture_permission_error)
+                    features['behavioral_indicators'].append('Packet capture blocked by container privileges (requires NET_RAW/NET_ADMIN and root or equivalent).')
+                    logger.warning('Packet capture finalization blocked by permissions', extra={'url': url})
+                except Exception as capture_finalize_error:
+                    features['packet_capture_status'] = 'failed'
+                    features['packet_capture_error'] = str(capture_finalize_error)
+                    logger.exception('Failed to finalize packet capture', extra={'url': url})
+
             if browser:
                 await browser.close()
             if playwright_mgr:
                 await playwright_mgr.stop()
-        
+
         return features
-    
+
     def _on_request(self, request, network_data: Dict):
         """Track outgoing requests"""
         request_info = {
@@ -862,5 +871,5 @@ class BehavioralAnalyzer:
             return filepath
             
         except Exception as e:
-            print(f"Screenshot error: {e}")
+            logger.warning(f"Screenshot error: {e}")
             return None

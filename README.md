@@ -23,6 +23,9 @@ Otherwise, `mv` to `phish/backend` and run `python app.py`.
 
 In both case, visit `index.html` to get the interface.
 
+### Packet capture permissions (Docker)
+Live packet capture requires raw socket privileges in the backend container. The compose setup must run backend with `NET_RAW` + `NET_ADMIN` and root (or equivalent capabilities), otherwise Scapy sniffing will fail with `PermissionError: [Errno 1] Operation not permitted`.
+
 ## Some demo images
 #### Things have changed a bit (this is older version) [but I was too lazy to upload. maybe you can check for yourself]
 ### Main screen (after analysis) [to see before analysis, repeat the steps mentioned before:)]

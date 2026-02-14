@@ -70,12 +70,10 @@ class EmailPhishingAnalyzer:
     
     def extract_content_features(self):
         """Analyze email body content"""
-        # Get plain text body
         body_text = self._get_email_body()
         self.features['body_text'] = body_text[:2000]  # Limit for LLM
         self.features['body_length'] = len(body_text)
         
-        # Check for urgency keywords
         urgency_keywords = [
             'urgent', 'immediate', 'action required', 'verify', 'suspend',
             'confirm', 'click here', 'act now', 'limited time', 'expire',
@@ -85,12 +83,10 @@ class EmailPhishingAnalyzer:
         urgency_count = sum(1 for keyword in urgency_keywords if keyword.lower() in body_text.lower())
         self.features['urgency_keyword_count'] = urgency_count
         
-        # Check for financial keywords
         financial_keywords = ['bank', 'account', 'payment', 'credit card', 'paypal', 'transaction']
         financial_count = sum(1 for keyword in financial_keywords if keyword.lower() in body_text.lower())
         self.features['financial_keyword_count'] = financial_count
         
-        # Check for spelling/grammar issues (simple heuristic)
         self.features['has_spelling_errors'] = self._check_spelling_errors(body_text)
     
     def extract_links(self):
@@ -104,16 +100,13 @@ class EmailPhishingAnalyzer:
         self.features['link_count'] = len(urls)
         self.features['links'] = urls[:10]  # Store first 10 links
         
-        # Check for IP-based URLs
         ip_based_urls = [url for url in urls if re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', url)]
         self.features['has_ip_based_url'] = len(ip_based_urls) > 0
         
-        # Check for shortened URLs
         shortener_domains = ['bit.ly', 'tinyurl.com', 'goo.gl', 't.co', 'ow.ly']
         shortened_urls = [url for url in urls if any(domain in url for domain in shortener_domains)]
         self.features['has_shortened_url'] = len(shortened_urls) > 0
         
-        # Check for mismatched link text (if HTML)
         if self.msg.is_multipart():
             html_body = self._get_html_body()
             if html_body:
@@ -129,7 +122,6 @@ class EmailPhishingAnalyzer:
             if part.get_content_disposition() == 'attachment':
                 filename = part.get_filename()
                 if filename:
-                    # Get file extension
                     ext = filename.split('.')[-1].lower() if '.' in filename else 'none'
                     
                     attachments.append({
@@ -141,22 +133,18 @@ class EmailPhishingAnalyzer:
         self.features['attachment_count'] = len(attachments)
         self.features['attachments'] = attachments
         
-        # Check for suspicious extensions
         suspicious_exts = ['exe', 'scr', 'bat', 'cmd', 'com', 'pif', 'vbs', 'js', 'jar', 'zip']
         has_suspicious = any(att['extension'] in suspicious_exts for att in attachments)
         self.features['has_suspicious_attachment'] = has_suspicious
     
     def check_authentication(self):
         """Check email authentication headers"""
-        # SPF
         spf_header = self.msg.get('Received-SPF', '')
         self.features['spf_result'] = 'pass' if 'pass' in spf_header.lower() else 'fail/unknown'
         
-        # DKIM
         dkim_header = self.msg.get('DKIM-Signature', '')
         self.features['has_dkim'] = bool(dkim_header)
         
-        # Authentication-Results
         auth_results = self.msg.get('Authentication-Results', '')
         self.features['authentication_results'] = auth_results[:200] if auth_results else 'None'
     
@@ -165,7 +153,6 @@ class EmailPhishingAnalyzer:
         if not email_field:
             return None
         
-        # Match email pattern
         match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', email_field)
         return match.group(0) if match else None
     
@@ -196,12 +183,10 @@ class EmailPhishingAnalyzer:
     
     def _check_link_mismatch(self, html_body):
         """Check if link text doesn't match href"""
-        # Simple check for <a href="X">Y</a> where X != Y
         pattern = r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>([^<]+)</a>'
         matches = re.findall(pattern, html_body, re.IGNORECASE)
         
         for href, text in matches:
-            # If text looks like a URL but doesn't match href
             if re.match(r'http[s]?://', text.strip()) and text.strip() != href:
                 return True
         
@@ -209,13 +194,11 @@ class EmailPhishingAnalyzer:
     
     def _check_spelling_errors(self, text):
         """Simple heuristic for spelling errors"""
-        # Check for excessive uppercase
         if len(text) > 50:
             upper_ratio = sum(1 for c in text if c.isupper()) / len(text)
             if upper_ratio > 0.3:
                 return True
         
-        # Check for repeated characters (e.g., "hellooo")
         if re.search(r'(.)\1{3,}', text):
             return True
         

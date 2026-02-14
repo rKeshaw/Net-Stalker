@@ -567,16 +567,13 @@ class AlienVaultOTXClient(ExternalAPIClient):
         try:
             self._rate_limit()
             
-            # URL needs to be in a specific format for OTX
             import urllib.parse
             parsed = urllib.parse.urlparse(url)
             hostname = parsed.netloc or parsed.path
             
-            # Get general information about the URL
             headers = {"X-OTX-API-KEY": self.api_key}
             
             async with aiohttp.ClientSession() as session:
-                # Check URL indicators
                 async with session.get(
                     f"{self.base_url}/indicators/url/{urllib.parse.quote(url, safe='')}/general",
                     headers=headers
@@ -585,7 +582,6 @@ class AlienVaultOTXClient(ExternalAPIClient):
                         data = await response.json()
                         result = await self._parse_url_report(data, url, session, headers)
                     elif response.status == 404:
-                        # URL not found in OTX
                         result = {
                             "source": "alienvault_otx",
                             "verdict": "unknown",
@@ -620,9 +616,7 @@ class AlienVaultOTXClient(ExternalAPIClient):
         pulses = pulse_info.get("pulses", [])
         pulse_count = pulse_info.get("count", 0)
         
-        # Determine verdict based on pulse data
         if pulse_count > 0:
-            # Check pulse tags for malicious indicators
             malicious_tags = []
             for pulse in pulses[:10]:  # Check first 10 pulses
                 tags = pulse.get("tags", [])
@@ -638,14 +632,12 @@ class AlienVaultOTXClient(ExternalAPIClient):
         else:
             verdict = "clean"
         
-        # Get additional domain info if available
         try:
             import urllib.parse
             parsed = urllib.parse.urlparse(url)
             domain = parsed.netloc
             
             if domain:
-                # Get domain reputation
                 async with session.get(
                     f"{self.base_url}/indicators/domain/{domain}/general",
                     headers=headers
@@ -655,7 +647,6 @@ class AlienVaultOTXClient(ExternalAPIClient):
                         domain_pulse_info = domain_data.get("pulse_info", {})
                         domain_pulse_count = domain_pulse_info.get("count", 0)
                         
-                        # Combine URL and domain pulse counts
                         total_pulses = pulse_count + domain_pulse_count
                     else:
                         total_pulses = pulse_count
@@ -665,7 +656,6 @@ class AlienVaultOTXClient(ExternalAPIClient):
         except:
             total_pulses = pulse_count
         
-        # Extract detailed information
         detailed = {
             "pulse_count": pulse_count,
             "total_related_pulses": total_pulses,
@@ -688,7 +678,6 @@ class AlienVaultOTXClient(ExternalAPIClient):
             }
             detailed["pulses"].append(pulse_detail)
         
-        # Extract threat categories
         all_tags = []
         malware_families = []
         adversaries = []
@@ -737,7 +726,6 @@ class AlienVaultOTXClient(ExternalAPIClient):
             headers = {"X-OTX-API-KEY": self.api_key}
             
             async with aiohttp.ClientSession() as session:
-                # Get domain general info
                 async with session.get(
                     f"{self.base_url}/indicators/domain/{domain}/general",
                     headers=headers
@@ -778,7 +766,6 @@ class AlienVaultOTXClient(ExternalAPIClient):
         pulses = pulse_info.get("pulses", [])
         pulse_count = pulse_info.get("count", 0)
         
-        # Determine verdict
         if pulse_count > 0:
             malicious_indicators = sum(
                 1 for pulse in pulses[:10]
@@ -797,14 +784,12 @@ class AlienVaultOTXClient(ExternalAPIClient):
         else:
             verdict = "clean"
         
-        # Get additional domain intelligence
         detailed = {
             "pulse_count": pulse_count,
             "domain_info": {},
             "pulses": []
         }
         
-        # Try to get WHOIS and other domain data
         try:
             async with session.get(
                 f"{self.base_url}/indicators/domain/{domain}/whois",
@@ -821,7 +806,6 @@ class AlienVaultOTXClient(ExternalAPIClient):
         except:
             pass
         
-        # Try to get malware samples
         try:
             async with session.get(
                 f"{self.base_url}/indicators/domain/{domain}/malware",
@@ -834,7 +818,6 @@ class AlienVaultOTXClient(ExternalAPIClient):
         except:
             pass
         
-        # Add pulse details
         for pulse in pulses[:10]:
             detailed["pulses"].append({
                 "name": pulse.get("name", "Unknown"),
@@ -845,7 +828,6 @@ class AlienVaultOTXClient(ExternalAPIClient):
                 "adversary": pulse.get("adversary", "Unknown")
             })
         
-        # Summary
         all_tags = []
         for pulse in pulses:
             all_tags.extend(pulse.get("tags", []))
@@ -897,13 +879,10 @@ class ExternalAPIAggregator:
                 "message": "No external APIs configured"
             }
         
-        # Run all API checks concurrently
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        # Filter out exceptions
         valid_results = [r for r in results if isinstance(r, dict)]
         
-        # Aggregate verdicts
         aggregated = self._aggregate_verdicts(valid_results)
         
         return {
@@ -948,7 +927,6 @@ class ExternalAPIAggregator:
                 "summary": "No results available"
             }
         
-        # Count verdicts
         verdicts = {
             "malicious": 0,
             "phishing": 0,
@@ -974,7 +952,6 @@ class ExternalAPIAggregator:
                 "summary": "All API checks failed"
             }
         
-        # Determine final verdict
         malicious_total = verdicts["malicious"] + verdicts["phishing"]
         
         if malicious_total > 0:

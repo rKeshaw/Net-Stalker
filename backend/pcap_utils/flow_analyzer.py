@@ -2,7 +2,6 @@ import collections
 import time
 from scapy.all import IP, IPv6, TCP, UDP, ARP, ICMP, DNS, ICMPv6ND_NS, corrupt_bytes
 
-# Time-series traffic chart data
 def time_flow(PCAPS):
     time_flow_dict = collections.OrderedDict()
     start = PCAPS[0].time
@@ -12,7 +11,6 @@ def time_flow(PCAPS):
         time_flow_dict[float('%.3f'%timediff)] = len(corrupt_bytes(pcap))
     return time_flow_dict
 
-# Get the primary host IP from the capture
 def get_host_ip(PCAPS):
     ip_list = list()
     for pcap in PCAPS:
@@ -24,7 +22,6 @@ def get_host_ip(PCAPS):
     host_ip = collections.Counter(ip_list).most_common(1)[0][0]
     return host_ip
 
-# IN/OUT packet count statistics
 def data_flow(PCAPS, host_ip):
     data_flow_dict = {'IN': 0, 'OUT': 0}
     for pcap in PCAPS:
@@ -35,7 +32,6 @@ def data_flow(PCAPS, host_ip):
                 data_flow_dict['IN'] += 1
     return data_flow_dict
 
-# Inbound/Outbound IP traffic stats
 def data_in_out_ip(PCAPS, host_ip):
     in_ip_packet_dict = dict()
     in_ip_len_dict = dict()
@@ -73,7 +69,6 @@ def data_in_out_ip(PCAPS, host_ip):
         'out_keyl': [k for k,v in out_len_dict], 'out_len': [v for k,v in out_len_dict]
     }
 
-# Total traffic per protocol
 def proto_flow(PCAPS):
     proto_flow_dict = collections.OrderedDict({
         'IP': 0, 'IPv6': 0, 'TCP': 0, 'UDP': 0, 'ARP': 0,

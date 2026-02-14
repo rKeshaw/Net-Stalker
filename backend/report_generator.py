@@ -1,3 +1,6 @@
+from logging_config import get_logger
+logger = get_logger(__name__)
+
 import os
 import jinja2
 import base64
@@ -250,9 +253,20 @@ class ForensicReportGenerator:
             output_path = os.path.join(self.output_dir, output_filename)
             
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
+                ws_endpoint = os.getenv('PLAYWRIGHT_WS_ENDPOINT')
+                browser = None
                 
+                if ws_endpoint:
+                    try:
+                        browser = await p.chromium.connect(ws_endpoint)
+                        logger.info('Using remote Playwright browser for PDF generation')
+                    except Exception:
+                        logger.warning('Failed to connect remote Playwright endpoint, falling back to local browser')
+                
+                if browser is None:
+                    browser = await p.chromium.launch(headless=True)
+
+                page = await browser.new_page()
                 await page.set_content(html_content, wait_until="networkidle")
                 
                 await page.pdf(
@@ -267,5 +281,5 @@ class ForensicReportGenerator:
             return output_path
 
         except Exception as e:
-            print(f"Report Generation Failed: {e}")
+            logger.exception("Report Generation Failed")
             return None

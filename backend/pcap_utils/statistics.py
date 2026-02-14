@@ -1,6 +1,8 @@
 import collections
 import geoip2.database
 import os
+
+_GEO_READER = None
 from scapy.all import corrupt_bytes
 
 def pcap_len_statistic(PCAPS):
@@ -74,13 +76,19 @@ def dns_statistic(PCAPS):
     return dns_dict
 
 def get_geo(ip):
-    # Dynamically locate the GeoIP DB
+    global _GEO_READER
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, 'GeoIP', 'GeoLite2-City.mmdb')
+    if _GEO_READER is None:
+        if not os.path.exists(db_path):
+            return None
+        try:
+            _GEO_READER = geoip2.database.Reader(db_path)
+        except Exception:
+            return None
     
     try:
-        reader = geoip2.database.Reader(db_path)
-        response = reader.city(ip)
+        response = _GEO_READER.city(ip)
         city_name = (response.country.names.get('en', '') + " " + response.city.names.get('en', '')).strip()
         return [city_name, response.location.longitude, response.location.latitude]
     except Exception:
@@ -117,3 +125,22 @@ def get_ipmap(PCAPS, host_ip):
             })
             
     return {"geo_locations": geo_dict, "ip_data": ip_data_list}
+
+def protocol_resolution_statistic(PCAPS, PD):
+    resolved = 0
+    unresolved = 0
+    for pcap in PCAPS:
+        decoded = PD.ether_decode(pcap)
+        proto = decoded.get('Procotol', 'Unknown')
+        if proto == 'Unknown':
+            unresolved += 1
+        else:
+            resolved += 1
+
+    total = resolved + unresolved
+    resolution_rate = round((resolved / total) * 100, 2) if total else 0.0
+    return {
+        'resolved_packets': resolved,
+        'unresolved_packets': unresolved,
+        'resolution_rate_percent': resolution_rate
+    }

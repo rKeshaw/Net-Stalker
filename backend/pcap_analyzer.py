@@ -4,6 +4,9 @@ import time
 from scapy.all import rdpcap
 from pcap_utils.pcap_decode import PcapDecode
 from pcap_utils import flow_analyzer, statistics
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 class PCAPAnalyzer:
     def __init__(self):
@@ -14,7 +17,8 @@ class PCAPAnalyzer:
         Asynchronously analyze a PCAP file using Scapy (which is blocking).
         """
         if not os.path.exists(file_path):
-            return {"error": "File not found"}
+            logger.error("PCAP file not found", extra={"pcap_path": file_path})
+            return {"status": "failed", "error": "File not found"}
 
         # Scapy is CPU bound and blocking, run in thread
         return await asyncio.to_thread(self._analyze_sync, file_path)
@@ -25,7 +29,7 @@ class PCAPAnalyzer:
             pcaps = rdpcap(file_path)
             
             if not pcaps:
-                return {"error": "Empty or invalid PCAP file"}
+                return {"status": "failed", "error": "Empty or invalid PCAP file"}
 
             count = len(pcaps)
             duration = pcaps[-1].time - pcaps[0].time
@@ -47,6 +51,7 @@ class PCAPAnalyzer:
                 "top_protocols": statistics.most_proto_statistic(pcaps, self.pd),
                 "http_stats": statistics.http_statistic(pcaps),
                 "dns_stats": statistics.dns_statistic(pcaps),
+                "protocol_resolution": statistics.protocol_resolution_statistic(pcaps, self.pd),
             }
 
             flow_data = {
@@ -69,6 +74,11 @@ class PCAPAnalyzer:
                     "duration": round(float(duration), 2),
                     "processing_time": round(processing_time, 2)
                 },
+                "decoder_metadata": {
+                    "protocol_catalogs": self.pd.get_protocol_sources(),
+                    "geoip_db_path": os.path.join(os.path.dirname(os.path.abspath(__file__)), "pcap_utils", "GeoIP", "GeoLite2-City.mmdb"),
+                    "geoip_db_present": os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "pcap_utils", "GeoIP", "GeoLite2-City.mmdb"))
+                },
                 "statistics": stats,
                 "flow_analysis": flow_data,
                 "geo_map": geo_data,
@@ -76,7 +86,9 @@ class PCAPAnalyzer:
             }
 
         except Exception as e:
+            logger.exception("PCAP decoding failed", extra={"pcap_path": file_path})
             return {
                 "status": "failed",
                 "error": str(e)
             }
+        

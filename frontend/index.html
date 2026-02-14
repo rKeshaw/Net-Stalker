@@ -40,6 +40,10 @@
                     </button>
                 </div>
                 <p class="help-text">Enter a complete URL including http:// or https://</p>
+                <div class="toggle-group">
+                    <label><input type="checkbox" id="urlEnableBehavioral" checked> Enable behavioral browser analysis</label>
+                    <label><input type="checkbox" id="urlEnableLiveCapture" checked> Enable live packet capture</label>
+                </div>
             </div>
         </div>
 
@@ -108,6 +112,10 @@
                     <span id="qrFileName"></span>
                     <button onclick="clearQRFile()" class="clear-btn">✕</button>
                 </div>
+                <div class="toggle-group">
+                    <label><input type="checkbox" id="qrEnableBehavioral" checked> Deep URL behavioral scan for QR URLs</label>
+                    <label><input type="checkbox" id="qrEnableLiveCapture" checked> Enable live packet capture</label>
+                </div>
                 <button id="analyzeQRBtn" onclick="analyzeQR()" class="hidden">
                     <span id="qrBtnText">Scan & Analyze</span>
                     <span id="qrBtnLoader" class="loader hidden"></span>
@@ -159,6 +167,10 @@
 
                     <button id="downloadReportBtn" class="action-btn hidden" onclick="downloadReport()">
                         📄 Download PDF Report
+                    </button>
+
+                    <button id="resetResultsBtn" class="action-btn secondary" onclick="resetResults()">
+                        ♻️ Reset
                     </button>
                 </div>
             </div>

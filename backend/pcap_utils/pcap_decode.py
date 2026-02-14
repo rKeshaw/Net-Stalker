@@ -1,6 +1,9 @@
 import os
 import time
 from scapy.all import Ether, IP, TCP, UDP, IPv6, corrupt_bytes
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 class PcapDecode:
     """
@@ -9,17 +12,18 @@ class PcapDecode:
     """
     
     def __init__(self):
-        # Dynamically locate the protocol config files relative to this script
         base_dir = os.path.dirname(os.path.abspath(__file__))
         protocol_dir = os.path.join(base_dir, 'protocol')
 
-        self.ETHER_DICT = self._load_protocol(os.path.join(protocol_dir, 'ETHER'))
-        self.IP_DICT = self._load_protocol(os.path.join(protocol_dir, 'IP'))
-        self.PORT_DICT = self._load_protocol(os.path.join(protocol_dir, 'PORT'))
-        self.TCP_DICT = self._load_protocol(os.path.join(protocol_dir, 'TCP'))
-        self.UDP_DICT = self._load_protocol(os.path.join(protocol_dir, 'UDP'))
+        self.protocol_sources = {}
 
-    def _load_protocol(self, filepath):
+        self.ETHER_DICT = self._load_protocol(os.path.join(protocol_dir, 'ETHER'), 'ETHER')
+        self.IP_DICT = self._load_protocol(os.path.join(protocol_dir, 'IP'), 'IP')
+        self.PORT_DICT = self._load_protocol(os.path.join(protocol_dir, 'PORT'), 'PORT')
+        self.TCP_DICT = self._load_protocol(os.path.join(protocol_dir, 'TCP'), 'TCP')
+        self.UDP_DICT = self._load_protocol(os.path.join(protocol_dir, 'UDP'), 'UDP')
+
+    def _load_protocol(self, filepath, proto_name):
         """Helper to load protocol dictionaries securely"""
         proto_dict = {}
         try:
@@ -31,9 +35,18 @@ class PcapDecode:
                         key, value = line.split(':', 1)
                         proto_dict[int(key)] = value
         except Exception as e:
-            print(f"Warning: Could not load protocol file {filepath}: {e}")
-        return proto_dict
+            logger.warning("Could not load protocol file", extra={"file_name": filepath})
 
+        self.protocol_sources[proto_name] = {
+            "path": filepath,
+            "entries": len(proto_dict),
+            "loaded": bool(proto_dict)
+        }
+        return proto_dict
+    
+    def get_protocol_sources(self):
+        return self.protocol_sources
+    
     def ether_decode(self, p):
         data = dict()
         if p.haslayer(Ether):

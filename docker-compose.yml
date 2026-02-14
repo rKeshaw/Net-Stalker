@@ -8,13 +8,16 @@ services:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY}
       - GOOGLE_SAFE_BROWSING_API_KEY=${GOOGLE_SAFE_BROWSING_API_KEY}
+      - ALIENVAULT_OTX_KEY=${ALIENVAULT_OTX_KEY}
       - PLAYWRIGHT_WS_ENDPOINT=ws://secure-browser:3000/chromium/playwright
     depends_on:
       - secure-browser
     networks:
       - phish-net-network
-    cap_add:          
+    user: root
+    cap_add:
       - NET_ADMIN
+      - NET_RAW
     deploy:
       resources:
         limits:
