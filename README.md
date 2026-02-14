@@ -1,4 +1,5 @@
 # 🛡️Phishing Detection (Backed {not only} by AI)
+#### Packet analysis idea (and files in the `backend/pcap_utils/GeoIP` and `backend/pcap_utils/protocol` have been adapted from err0rgod/MidStalker repository
 ### To setup, create the .env file:
 I have used grok api (as it is free, upto a extent), if you want to change, change the code accordingly!
 ```
