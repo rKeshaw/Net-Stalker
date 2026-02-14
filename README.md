@@ -26,6 +26,9 @@ In both case, visit `index.html` to get the interface.
 ### Packet capture permissions (Docker)
 Live packet capture requires raw socket privileges in the backend container. The compose setup must run backend with `NET_RAW` + `NET_ADMIN` and root (or equivalent capabilities), otherwise Scapy sniffing will fail with `PermissionError: [Errno 1] Operation not permitted`.
 
+## Acknowledgement:
+Packet analysis idea (and files in the `backend/pcap_utils/GeoIP` and `backend/pcap_utils/protocol` have been adapted from err0rgod/MidStalker repository
+
 ## Some demo images
 #### Things have changed much (this is older version) [but I was too lazy to upload. maybe you can check for yourself]
 ### Main screen (after analysis) [to see before analysis, repeat the steps mentioned before:)]
@@ -39,6 +42,3 @@ Live packet capture requires raw socket privileges in the backend container. The
 
 ### Behavior Analysis (Using headless browser)
 <img width="1100" height="864" alt="image" src="https://github.com/user-attachments/assets/09375326-e927-4100-804c-30b8b51a8a1c" />
-
-### Acknowledgement:
-Packet analysis idea (and files in the `backend/pcap_utils/GeoIP` and `backend/pcap_utils/protocol` have been adapted from err0rgod/MidStalker repository
