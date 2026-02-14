@@ -1,5 +1,4 @@
 # 🛡️Phishing Detection (Backed {not only} by AI)
-#### Packet analysis idea (and files in the `backend/pcap_utils/GeoIP` and `backend/pcap_utils/protocol` have been adapted from err0rgod/MidStalker repository
 ### To setup, create the .env file:
 I have used grok api (as it is free, upto a extent), if you want to change, change the code accordingly!
 ```
@@ -41,8 +40,5 @@ Live packet capture requires raw socket privileges in the backend container. The
 ### Behavior Analysis (Using headless browser)
 <img width="1100" height="864" alt="image" src="https://github.com/user-attachments/assets/09375326-e927-4100-804c-30b8b51a8a1c" />
 
-
-
-
-
-
+### Acknowledgement:
+Packet analysis idea (and files in the `backend/pcap_utils/GeoIP` and `backend/pcap_utils/protocol` have been adapted from err0rgod/MidStalker repository
