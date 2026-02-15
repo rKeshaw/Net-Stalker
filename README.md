@@ -1,44 +1,106 @@
-# 🛡️Phishing Detection (Backed {not only} by AI)
-### To setup, create the .env file:
-I have used grok api (as it is free, upto a extent), if you want to change, change the code accordingly!
+# Phish-Net
+
+> **Threat intel + behavioral forensics + AI reasoning for phishing detection.**
+
+Phish-Net is a full-stack phishing analysis lab designed for defenders, analysts, and curious builders. It combines static checks, external threat intelligence, browser-based behavioral analysis, and LLM-assisted reasoning into one workflow.
+
+---
+
+## Why Phish-Net
+
+Phishing investigations usually require jumping between tools. Phish-Net consolidates that process into one platform:
+
+- **URL Analysis** with feature extraction and risk scoring.
+- **Email Analysis** for suspicious metadata and embedded artifacts.
+- **Text Analysis** for social engineering signals.
+- **QR Analysis** for QR payload and destination checks.
+- **PCAP Analysis** for packet-level triage and network behavior insights.
+- **External Threat Intel Integrations** (VirusTotal, Google Safe Browsing, OTX, PhishTank, etc.).
+- **Behavioral Browser Analysis** for runtime observations and screenshots.
+- **Report Generation** for investigation handoff.
+
+---
+
+## Architecture (High Level)
+
+- **Frontend:** static HTML/CSS/JS dashboard (`frontend/`)
+- **Backend:** FastAPI service (`backend/app.py`)
+- **Analysis Engines:** custom analyzers for URL/email/text/QR/PCAP
+- **Async Execution:** background tasks + real-time progress streaming
+
+---
+
+## Quick Start
+
+### 1) Configure environment
+
+Create a `.env` file in the project root:
+
+```env
+GROQ_API_KEY=your_groq_api_key
+
+# External APIs
+VIRUSTOTAL_API_KEY=your_key
+GOOGLE_SAFE_BROWSING_API_KEY=your_key
+ALIENVAULT_OTX_KEY=your_key
+PHISHTANK_API_KEY=your_key
+
+# Optional / stubbed integrations
+OPSWAT_API_KEY=optional
+CISCO_UMBRELLA_KEY=optional
 ```
-GROQ_API_KEY=gsk_rest_is_secret
 
-### External APIs
-VIRUSTOTAL_API_KEY=will_not_tell_you
-GOOGLE_SAFE_BROWSING_API_KEY=not_at_all
-ALIENVAULT_OTX_KEY=ok_here_it_is
-PHISHTANK_API_KEY=passkey_13r31!#$Q#$11rr2
+### 2) Run with Docker (recommended)
 
-### Optional 
-OPSWAT_API_KEY=if_provide_you_will_need_to_extend_the_code_since_I_have_used_only_a_stub
-CISCO_UMBRELLA_KEY=same_with_this
+This is the safer mode because behavioral analysis may actively visit suspicious pages.
+
+```bash
+docker-compose build
+docker-compose up
 ```
 
-Then, do `pip install backend/requirements.txt`
+### 3) Run locally (without Docker)
 
-It runs both in docker and out of it. Using docker is a safer option, cause `headless browser` actually visits the website. To use docker, build using `docker-compose build` and then run using `docker-compose up`. 
+```bash
+pip install -r backend/requirements.txt
+cd backend
+python app.py
+```
 
-Otherwise, `mv` to `phish/backend` and run `python app.py`.
+Open `frontend/index.html` in your browser to use the dashboard.
 
-In both case, visit `index.html` to get the interface.
+---
 
-### Packet capture permissions (Docker)
-Live packet capture requires raw socket privileges in the backend container. The compose setup must run backend with `NET_RAW` + `NET_ADMIN` and root (or equivalent capabilities), otherwise Scapy sniffing will fail with `PermissionError: [Errno 1] Operation not permitted`.
+## API Surface (selected)
 
-## Acknowledgement:
-Packet analysis idea (and files in the `backend/pcap_utils/GeoIP` and `backend/pcap_utils/protocol` have been adapted from err0rgod/MidStalker repository
+- `POST /analyze/url`
+- `POST /analyze/email`
+- `POST /analyze/text`
+- `POST /analyze/qr`
+- `POST /analyze/pcap`
+- `GET /task/{task_id}`
+- `GET /task/{task_id}/stream`
+- `GET /report/{task_id}/download`
+- `GET /pcap/{filename}`
 
-## Some demo images
-#### Things have changed much (this is older version) [but I was too lazy to upload. maybe you can check for yourself]
-### Main screen (after analysis) [to see before analysis, repeat the steps mentioned before:)]
-<img width="1100" height="866" alt="image" src="https://github.com/user-attachments/assets/bf6f9dcc-c6b0-487a-8674-cbf9a6aa58ad" />
+---
 
-### Analysis
-<img width="1100" height="861" alt="image" src="https://github.com/user-attachments/assets/2ac0045d-7f3c-4a91-9795-958232504e76" />
+## Operational Notes
 
-### External Threat Intelligence
-<img width="1100" height="870" alt="image" src="https://github.com/user-attachments/assets/9272a7a6-b032-4bf1-b8fb-e97934ce4602" />
+- For behavioral analysis, isolate runtime environments when possible.
+- Treat uploaded samples and captured artifacts as sensitive evidence.
+- Rotate API keys and avoid committing secrets.
+- Prefer Docker or sandboxed hosts for untrusted content.
 
-### Behavior Analysis (Using headless browser)
-<img width="1100" height="864" alt="image" src="https://github.com/user-attachments/assets/09375326-e927-4100-804c-30b8b51a8a1c" />
+---
+## Acknowledgement
+
+Packet analysis idea (and files in `backend/pcap_utils/GeoIP` and `backend/pcap_utils/protocol`) have been adapted from `err0rgod/MidStalker`.
+
+## LICENSE
+
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+
+## Disclaimer
+
+Phish-Net is intended for defensive security research, malware/phishing triage, and education. Use only with proper authorization and in accordance with applicable laws and policies.
