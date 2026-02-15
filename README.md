@@ -1,4 +1,4 @@
-# Phish-Net
+# 🛡️ Phish-Net
 
 > **Threat intel + behavioral forensics + AI reasoning for phishing detection.**
 
