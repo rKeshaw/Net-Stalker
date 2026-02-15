@@ -6,7 +6,7 @@ Phish-Net is a full-stack phishing analysis lab designed for defenders, analysts
 
 ---
 
-## Why Phish-Net
+## Why Phish-Net (About Me)
 
 Phishing investigations usually require jumping between tools. Phish-Net consolidates that process into one platform:
 
@@ -82,15 +82,6 @@ Open `frontend/index.html` in your browser to use the dashboard.
 - `GET /task/{task_id}/stream`
 - `GET /report/{task_id}/download`
 - `GET /pcap/{filename}`
-
----
-
-## Operational Notes
-
-- For behavioral analysis, isolate runtime environments when possible.
-- Treat uploaded samples and captured artifacts as sensitive evidence.
-- Rotate API keys and avoid committing secrets.
-- Prefer Docker or sandboxed hosts for untrusted content.
 
 ---
 ## Acknowledgement
