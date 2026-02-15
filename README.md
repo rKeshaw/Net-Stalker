@@ -101,6 +101,6 @@ Packet analysis idea (and files in `backend/pcap_utils/GeoIP` and `backend/pcap_
 
 This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
-## Disclaimer
+## Welcome Invitation
 
-Phish-Net is intended for defensive security research, malware/phishing triage, and education. Use only with proper authorization and in accordance with applicable laws and policies.
+This project welcomes new ideas that can be added to improve the detection, or add new features.
