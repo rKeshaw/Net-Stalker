@@ -4,6 +4,7 @@
 
 let currentQRFile = null;
 let lastResult = null;
+let currentTaskId = null; 
 
 // ── URL Analysis ─────────────────────────────────────────────
 
@@ -30,6 +31,7 @@ async function analyzeURL() {
     });
 
     if (data.task_id) {
+      currentTaskId = data.task_id;
       updateProgress(15, 'Task queued, monitoring progress...');
       await new Promise((resolve, reject) => {
         streamTaskProgress(data.task_id,
@@ -81,6 +83,7 @@ async function analyzeEmail() {
     const data = await apiPost('/analyze/email', formData, true);
 
     if (data.task_id) {
+      currentTaskId = data.task_id;
       updateProgress(15, 'Processing...');
       await new Promise((resolve, reject) => {
         streamTaskProgress(data.task_id,
@@ -121,6 +124,7 @@ async function analyzeText() {
     const data = await apiPost('/analyze/text', { text });
 
     if (data.task_id) {
+      currentTaskId = data.task_id;
       updateProgress(20, 'Processing...');
       await new Promise((resolve, reject) => {
         streamTaskProgress(data.task_id,
@@ -185,10 +189,15 @@ async function analyzeQR() {
   try {
     const formData = new FormData();
     formData.append('file', currentQRFile);
+    // Explicitly add defaults as boolean strings so backend picks them up properly if needed
+    formData.append('use_external_apis', 'true');
+    formData.append('enable_behavioral', 'true');
+    formData.append('enable_live_capture', 'true');
 
     const data = await apiPost('/analyze/qr', formData, true);
 
     if (data.task_id) {
+      currentTaskId = data.task_id;
       updateProgress(20, 'Analyzing decoded content...');
       await new Promise((resolve, reject) => {
         streamTaskProgress(data.task_id,
@@ -215,6 +224,9 @@ function displayAllResults(data, type) {
   const normalized = normalizeDetectionResult(data, type);
   lastResult = normalized;
 
+  // Propagate Task ID from root
+  if (data.task_id) currentTaskId = data.task_id;
+
   const block = document.getElementById('resultsBlock');
   if (block) {
     block.classList.remove('hidden');
@@ -237,11 +249,12 @@ function displayAllResults(data, type) {
     }
   }
 
-  if (normalized.external_apis || normalized.virustotal || normalized.urlscan) {
+  if (normalized.external_apis || normalized.virustotal || normalized.urlscan || normalized.url_deep_scans) {
     const eBlock = document.getElementById('externalBlock');
     if (eBlock) {
       eBlock.classList.remove('hidden');
       eBlock.innerHTML = buildExternalAPIHTML(normalized);
+      attachDeepScanListeners(normalized.url_deep_scans);
     }
   }
 
@@ -339,7 +352,7 @@ function buildMainResultsHTML(data, type) {
   }
 
   html += `<div style="margin-top:16px;text-align:right">
-    <button class="btn-ghost" onclick="downloadReport()">⬇ Export Report</button>
+    <button class="btn-ghost" onclick="downloadReport()" id="exportReportBtn">⬇ Export PDF Report</button>
   </div>`;
   html += `</div>`;
   return html;
@@ -364,6 +377,14 @@ function buildBehavioralHTML(beh) {
     html += `<div class="stat-card"><div class="val ${cls}">${s.val}</div><div class="lbl">${s.lbl}</div></div>`;
   });
   html += `</div>`;
+
+  // PCAP Link handling
+  if (beh.pcap_path) {
+    const pcapFile = beh.pcap_path.split('/').pop();
+    html += `<div class="b-section" style="margin-top: 15px;">
+        <button class="btn-ghost" onclick="downloadPCAP('${pcapFile}')" style="color: var(--accent-green); border-color: var(--accent-green);">⬇ Download Captured PCAP</button>
+    </div>`;
+  }
 
   // Screenshot
   if (beh.screenshot) {
@@ -506,15 +527,14 @@ function buildExternalAPIHTML(data) {
     </div>`;
   }
 
-  // Deep scan items
-  if (data.deep_scan) {
-    const ds = data.deep_scan;
-    html += `<div class="deep-scan-container" style="grid-column:1/-1">
-      <div class="card-title" style="margin-bottom:10px">Deep Scan Results</div>`;
-    Object.entries(ds).forEach(([key, val]) => {
-      html += `<div class="deep-scan-item">
-        <span style="color:var(--text-secondary)">${escapeHTML(key.replace(/_/g,' '))}</span>
-        <span style="color:${val === true || val === 'pass' ? 'var(--accent-green)' : val === false || val === 'fail' ? 'var(--accent-red)' : 'var(--text-primary)'}">${escapeHTML(String(val))}</span>
+  // Deep scan tasks mapping logic fix
+  if (data.url_deep_scans && data.url_deep_scans.length > 0) {
+    html += `<div class="deep-scan-container" style="grid-column:1/-1; margin-top: 15px;">
+      <div class="card-title" style="margin-bottom:10px">Deep Scan Background Tasks</div>`;
+    data.url_deep_scans.forEach((scan, i) => {
+      html += `<div class="deep-scan-item" style="display:flex; justify-content:space-between; align-items: center; border-bottom: 1px solid rgba(0,212,255,0.1); padding: 8px 0;">
+        <span style="color:var(--text-secondary); font-family:var(--font-mono); font-size:0.75rem;">${escapeHTML(scan.url)}</span>
+        <button class="btn-ghost d-scan-btn" data-task="${scan.task_id}" style="padding:4px 8px; font-size:0.7rem;">Monitor Result</button>
       </div>`;
     });
     html += `</div>`;
@@ -522,6 +542,30 @@ function buildExternalAPIHTML(data) {
 
   html += `</div></div>`;
   return html;
+}
+
+function attachDeepScanListeners(scans) {
+  if (!scans || !scans.length) return;
+  document.querySelectorAll('.d-scan-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const taskId = e.target.getAttribute('data-task');
+      showProgressModal('Deep Scanning URL...');
+      updateProgress(10, 'Monitoring task...');
+      
+      try {
+        await new Promise((resolve, reject) => {
+          streamTaskProgress(taskId,
+            (pct, msg) => updateProgress(10 + pct * 0.9, msg),
+            result => { hideProgressModal(); displayAllResults(result, 'url'); resolve(); },
+            err => reject(new Error(err))
+          );
+        });
+      } catch (err) {
+        hideProgressModal();
+        showError('Deep scan failed: ' + err.message);
+      }
+    });
+  });
 }
 
 function buildHoneypotHTML(honeypot) {
@@ -578,7 +622,7 @@ function buildQRSection(qrCodes) {
   return html;
 }
 
-// ── Screenshot viewer ────────────────────────────────────────
+// ── File Handlers ──────────────────────────────────────────
 
 function viewScreenshot(src) {
   const modal = document.createElement('div');
@@ -588,12 +632,43 @@ function viewScreenshot(src) {
   document.body.appendChild(modal);
 }
 
-// ── Download report ──────────────────────────────────────────
+// ── Downloads ─────────────────────────────────────────────────
 
-function downloadReport() {
-  if (!lastResult) return;
-  const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-  downloadJSON(lastResult, `phishnet-report-${ts}.json`);
+async function downloadReport() {
+  if (currentTaskId) {
+    const btn = document.getElementById('exportReportBtn');
+    const og = btn.textContent;
+    btn.textContent = '⏳ Compiling PDF...';
+    try {
+      const res = await fetch(`${API_URL}/report/${currentTaskId}/download`);
+      if (!res.ok) throw new Error('Generation failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `Forensic_Report_${currentTaskId}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      showError('Failed to retrieve PDF report: ' + e.message);
+      // Fallback
+      if (lastResult) downloadJSON(lastResult, `phishnet-report-${currentTaskId}.json`);
+    } finally {
+      btn.textContent = og;
+    }
+  } else if (lastResult) {
+    // Immediate tasks without a server-side report endpoint
+    const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    downloadJSON(lastResult, `phishnet-report-${ts}.json`);
+  }
+}
+
+function downloadPCAP(filename) {
+    const url = `${API_URL}/pcap/${filename}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 }
 
 // ── Escape HTML ──────────────────────────────────────────────
