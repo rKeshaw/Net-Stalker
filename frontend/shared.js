@@ -2,7 +2,7 @@
    PHISH-NET — Shared Utilities
    ============================================================ */
 
-const API_URL = '';  // Same origin — backend serves frontend
+const API_URL = 'http://localhost:8000';  
 
 // ── UI helpers ──────────────────────────────────────────────
 
@@ -83,7 +83,9 @@ async function pollTaskStatus(taskId, onProgress, onDone, onError) {
 
       if (data.status === 'completed') {
         clearInterval(pollInterval);
-        onDone(data.result || data);
+        const finalResult = data.result || data;
+        finalResult.task_id = taskId; // Ensure propagation
+        onDone(finalResult);
       } else if (data.status === 'failed') {
         clearInterval(pollInterval);
         onError(data.error || 'Analysis failed');
@@ -109,7 +111,9 @@ async function streamTaskProgress(taskId, onProgress, onDone, onError) {
         if (evt.progress !== undefined) onProgress(evt.progress, evt.current_step || evt.message || '');
         if (evt.status === 'completed') {
           source.close();
-          onDone(evt.result || evt);
+          const finalResult = evt.result || evt;
+          finalResult.task_id = taskId; // Ensure propagation
+          onDone(finalResult);
           return;
         }
         if (evt.status === 'failed') {
@@ -150,7 +154,6 @@ async function apiPost(endpoint, body, isFormData = false) {
   }
   return res.json();
 }
-
 
 // ── Verdict badge helper ─────────────────────────────────────
 
