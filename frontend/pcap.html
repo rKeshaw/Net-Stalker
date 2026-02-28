@@ -1,215 +1,77 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>PHISH-NET — Network Forensics</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
-  <style>
-    .pcap-hero{padding:32px 0 28px;border-bottom:1px solid var(--border-dim);margin-bottom:32px}
-    .pcap-hero h1{font-family:var(--font-display);font-size:1.4rem;color:var(--accent-cyan);letter-spacing:4px;text-transform:uppercase;margin-bottom:6px}
-    .pcap-hero p{font-family:var(--font-mono);font-size:0.8rem;color:var(--text-secondary)}
-    .cmd-prompt{font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);margin-bottom:20px}
-    .cmd-prompt span{color:var(--accent-green)}
-    .pcap-upload-area{border:1px dashed var(--border-normal);border-radius:var(--radius-lg);padding:50px 24px;text-align:center;cursor:pointer;transition:var(--transition);background:rgba(0,212,255,0.02);position:relative;margin-bottom:16px}
-    .pcap-upload-area:hover,.pcap-upload-area.dragover{border-color:var(--accent-cyan);background:rgba(0,212,255,0.05);box-shadow:var(--glow-cyan)}
-    .pcap-upload-area input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-    .upload-icon{font-size:3rem;opacity:0.4;display:block;margin-bottom:12px}
-    .upload-title{font-family:var(--font-display);font-size:0.9rem;color:var(--accent-cyan);letter-spacing:3px;text-transform:uppercase}
-    .upload-sub{font-family:var(--font-mono);font-size:0.74rem;color:var(--text-muted);margin-top:8px}
-    .file-badge{display:inline-flex;align-items:center;gap:10px;background:rgba(0,255,136,0.07);border:1px solid var(--border-green);border-radius:var(--radius-md);padding:9px 16px;font-family:var(--font-mono);font-size:0.8rem;color:var(--accent-green);margin-bottom:16px}
-    .file-badge button{background:none;border:none;color:var(--accent-red);cursor:pointer;font-size:1rem;padding:0 4px;line-height:1}
-    .chart-panel{background:var(--bg-card);border:1px solid var(--border-dim);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
-    .chart-panel-title{font-family:var(--font-mono);font-size:0.72rem;color:var(--accent-cyan);text-transform:uppercase;letter-spacing:2px;margin-bottom:14px;display:flex;align-items:center;gap:8px}
-    .chart-panel-title::before{content:'▶';font-size:0.55rem;color:var(--accent-green)}
-    .charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    @media(max-width:640px){.charts-grid{grid-template-columns:1fr}}
-    #errorBanner{background:rgba(255,34,68,0.08);border:1px solid var(--border-red);border-radius:var(--radius-md);padding:13px 16px;font-family:var(--font-mono);font-size:0.8rem;color:var(--accent-red);margin-bottom:16px;display:none}
-    #errorBanner::before{content:'⚠  '}
-    .pcap-threat-header{display:flex;align-items:center;gap:16px;padding:16px 20px;border-radius:var(--radius-lg);margin-bottom:20px}
-    .pcap-threat-header.clean{background:rgba(0,255,136,0.05);border:1px solid var(--border-green)}
-    .pcap-threat-header.suspicious{background:rgba(255,215,0,0.06);border:1px solid rgba(255,215,0,0.3)}
-    .pcap-threat-header.malicious{background:rgba(255,34,68,0.07);border:1px solid var(--border-red)}
-    .pcap-ai-analysis{background:var(--bg-card);border:1px solid var(--border-dim);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
-    .pcap-ai-analysis p{font-size:0.88rem;line-height:1.7;color:var(--text-primary)}
-    .conn-table{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:0.72rem}
-    .conn-table th{text-align:left;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;padding:7px 10px;border-bottom:1px solid var(--border-dim)}
-    .conn-table td{padding:7px 10px;border-bottom:1px solid rgba(0,212,255,0.05);color:var(--text-secondary)}
-    .conn-table tr:hover td{background:rgba(0,212,255,0.03);color:var(--text-primary)}
-    .geo-ip-item{display:flex;justify-content:space-between;align-items:center;padding:8px 11px;background:var(--bg-input);border:1px solid var(--border-dim);border-radius:var(--radius-sm);margin-bottom:6px;font-family:var(--font-mono);font-size:0.74rem}
-    .geo-ip-item .ip{color:var(--accent-cyan)}
-    .geo-ip-item .loc{color:var(--text-secondary)}
-    .suspicious-row td{color:var(--accent-yellow)!important}
-    .malicious-row td{color:var(--accent-red)!important}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PhishNet | Packet Analysis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
-<body>
-<div class="hex-bg"></div>
-<div class="scanlines"></div>
+<body class="cyber-body">
+    <div class="container">
+        <header class="cyber-shell">
+            <div class="workspace-nav">
+                <a href="index.html" class="action-btn secondary">← Home</a>
+                <a href="detection.html" class="action-btn secondary">Phishing Detection</a>
+            </div>
+            <h1>📡 PhishNet — Packet Analysis</h1>
+            <p class="subtitle">PCAP Upload • Traffic Visualization • Packet Filtering</p>
+        </header>
 
-<!-- NAV -->
-<nav class="nav-bar">
-  <a href="index.html" class="nav-logo">⬡ PHISH<em>-NET</em></a>
-  <ul class="nav-links">
-    <li><a href="index.html">Home</a></li>
-    <li><a href="detection.html">Threat Detection</a></li>
-    <li><a href="pcap.html" class="active">Network Forensics</a></li>
-  </ul>
-  <div class="nav-status"><span class="status-dot"></span>ENGINE ONLINE</div>
-</nav>
-
-<div class="page-wrapper">
-  <div class="pcap-hero">
-    <div class="cmd-prompt">root@phishnet:~$ <span>./pcap-analyzer --deep --ai-assist</span></div>
-    <h1>⬡ Network Forensics</h1>
-    <p>Upload a PCAP or PCAPNG capture file for deep packet inspection, protocol analysis, and AI-driven threat detection.</p>
-  </div>
-
-  <!-- ERROR -->
-  <div id="errorBanner"></div>
-
-  <!-- UPLOAD -->
-  <div id="uploadSection">
-    <div class="cyber-card">
-      <div class="card-title">Packet Capture Upload</div>
-      <div class="pcap-upload-area" id="pcapDropZone">
-        <input type="file" id="pcapFileInput" accept=".pcap,.pcapng,.cap" onchange="handlePcapFile(event)">
-        <span class="upload-icon">⬡</span>
-        <div class="upload-title">Drop PCAP File Here</div>
-        <div class="upload-sub">.pcap · .pcapng · .cap — or click to browse</div>
-      </div>
-      <div id="fileBadge" class="hidden"></div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="btn-ghost" onclick="clearPcap()" id="clearPcapBtn" style="display:none">CLEAR</button>
-        <button class="btn-primary" id="analyzePcapBtn" onclick="analyzePcap()">ANALYZE PCAP</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- RESULTS -->
-  <div id="pcapResults" class="hidden">
-
-    <!-- THREAT SUMMARY -->
-    <div id="pcapThreatHeader"></div>
-
-    <!-- AI ANALYSIS -->
-    <div id="pcapAiSection" class="hidden">
-      <div class="pcap-ai-analysis cyber-card">
-        <div class="card-title">AI Threat Assessment</div>
-        <div id="pcapAiText"></div>
-      </div>
-    </div>
-
-    <!-- STATS GRID -->
-    <div id="pcapStatsSection" class="hidden">
-      <div class="cyber-card">
-        <div class="card-title">Capture Statistics</div>
-        <div class="pcap-stats-grid" id="pcapStatsGrid"></div>
-      </div>
-    </div>
-
-    <!-- CHARTS ROW -->
-    <div class="charts-grid" id="chartsSection" style="display:none">
-      <div class="chart-panel">
-        <div class="chart-panel-title">Protocol Distribution</div>
-        <div id="protocolChart" style="height:280px"></div>
-      </div>
-      <div class="chart-panel">
-        <div class="chart-panel-title">Packet Size Distribution</div>
-        <div id="packetLenChart" style="height:280px"></div>
-      </div>
-    </div>
-
-    <!-- TIME FLOW -->
-    <div id="timeFlowSection" class="hidden">
-      <div class="chart-panel">
-        <div class="chart-panel-title">Traffic Timeline</div>
-        <div id="timeFlowChart" style="height:220px"></div>
-      </div>
-    </div>
-
-    <!-- CONNECTIONS -->
-    <div id="connectionsSection" class="hidden">
-      <div class="cyber-card">
-        <div class="card-title">Top Connections</div>
-        <div style="overflow-x:auto">
-          <table class="conn-table" id="connectionsTable">
-            <thead><tr><th>#</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Packets</th><th>Bytes</th><th>Flags</th></tr></thead>
-            <tbody id="connectionsBody"></tbody>
-          </table>
+        <div class="analyzer-section">
+            <h2>🦈 Network Traffic Forensics (PCAP)</h2>
+            <div class="upload-area" id="pcapUploadArea">
+                <input type="file" id="pcapFileInput" accept=".pcap,.cap,.pcapng" style="display:none;" onchange="handlePcapFile(this)" />
+                <div class="upload-prompt" onclick="document.getElementById('pcapFileInput').click()">
+                    <div class="upload-icon">📡</div>
+                    <p><strong>Click to upload</strong> or drag and drop PCAP file</p>
+                    <p class="upload-hint">Supports .pcap, .cap, .pcapng</p>
+                </div>
+            </div>
+            <div id="pcapFileInfo" class="file-info hidden"><span id="pcapFileName"></span><button onclick="clearPcapFile()" class="clear-btn">✕</button></div>
+            <button id="analyzePcapBtn" onclick="analyzePcap()" class="hidden"><span id="pcapBtnText">Analyze Traffic</span><span id="pcapBtnLoader" class="loader hidden"></span></button>
         </div>
-      </div>
-    </div>
 
-    <!-- DNS QUERIES -->
-    <div id="dnsSection" class="hidden">
-      <div class="cyber-card">
-        <div class="card-title">DNS Queries</div>
-        <div id="dnsContent"></div>
-      </div>
-    </div>
-
-    <!-- HTTP TRAFFIC -->
-    <div id="httpSection" class="hidden">
-      <div class="cyber-card">
-        <div class="card-title">HTTP/HTTPS Traffic</div>
-        <div id="httpContent"></div>
-      </div>
-    </div>
-
-    <!-- GEO IP -->
-    <div id="geoSection" class="hidden">
-      <div class="cyber-card">
-        <div class="card-title">Geographic IP Distribution</div>
-        <button class="geo-collapse-toggle" onclick="toggleGeoCollapse()">
-          <span>External IP Geolocation</span>
-          <span id="geoToggleIcon">▾</span>
-        </button>
-        <div class="geo-collapse-content collapsed" id="geoCollapseContent">
-          <div class="geo-ip-scroll" id="geoIpList"></div>
+        <div id="resultsContainer" class="hidden">
+            <div class="results-header">
+                <div class="header-left"><h2>Analysis Results</h2><div class="analysis-type-badge" id="analysisTypeBadge"></div></div>
+                <div class="header-right" style="display:flex;gap:10px;align-items:center;">
+                    <div id="verdictBadge" class="verdict-badge hidden"></div>
+                    <button id="downloadPcapBtn" class="action-btn secondary hidden" onclick="downloadPcap()">📡 Download PCAP</button>
+                    <button id="downloadReportBtn" class="action-btn hidden" onclick="downloadReport()">📄 Download PDF Report</button>
+                    <button id="resetResultsBtn" class="action-btn secondary" onclick="resetResults()">♻️ Reset</button>
+                </div>
+            </div>
+            <div id="standardResultsWrapper" class="hidden"></div>
+            <div id="pcapResultsWrapper" class="hidden">
+                <div class="result-card"><h3>📊 Traffic Statistics</h3><div class="tech-grid" id="pcapStatsGrid"></div></div>
+                <div class="result-card"><h3>🥧 Protocol Distribution</h3><div id="protocolChart" style="width:100%; height:400px;"></div></div>
+                <div class="result-card"><h3>📈 Traffic Flow (Time Series)</h3><div id="timeFlowChart" style="width:100%; height:350px;"></div></div>
+                <div class="result-card"><h3>📏 Packet Length Distribution</h3><div id="packetLenChart" style="width:100%; height:350px;"></div></div>
+                <div class="result-card"><h3>🧾 Packet Listing & Filters</h3>
+                    <div class="packet-filters">
+                        <select id="packetProtocolFilter" onchange="applyPacketFilters()"><option value="">All Protocols</option></select>
+                        <input type="text" id="packetSourceFilter" placeholder="Filter source IP/port" oninput="applyPacketFilters()" />
+                        <input type="text" id="packetDestFilter" placeholder="Filter destination IP/port" oninput="applyPacketFilters()" />
+                        <input type="text" id="packetInfoFilter" placeholder="Filter packet info/summary" oninput="applyPacketFilters()" />
+                    </div>
+                    <div class="packet-table-meta" id="packetTableMeta">Showing 0 of 0 packets</div>
+                    <div class="packet-table-wrapper"><table class="packet-table"><thead><tr><th>#</th><th>Time</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Length</th><th>Info</th></tr></thead><tbody id="packetTableBody"></tbody></table></div>
+                </div>
+            </div>
+            <div id="geoMapCard" class="result-card hidden"><h3>🌍 Server Infrastructure & Location</h3><div class="map-container"><div id="phishingMap" style="height:300px; width:100%; border-radius:8px; z-index:1;"></div></div><div id="geoDetails" class="geo-grid" style="margin-top:15px; display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;"></div></div>
+            <div id="externalApiCard" class="result-card collapsible hidden"><h3 onclick="toggleSection('externalApiResults')">🌐 External Threat Intelligence <span class="toggle-icon">▼</span></h3><div id="externalApiResults" class="collapsible-content"><div id="externalApiSummary" class="api-summary"></div><div id="externalApiDetails" class="api-details-grid"></div></div></div>
+            <div id="behavioralCard" class="result-card collapsible hidden"><h3 onclick="toggleSection('behavioralResults')">🎭 Behavioral Analysis <span class="toggle-icon">▼</span></h3><div id="behavioralResults" class="collapsible-content"><div id="behavioralSummary" class="behavioral-summary"></div><div id="behavioralDetails" class="behavioral-details"></div></div></div>
         </div>
-      </div>
+
+        <div id="errorContainer" class="error-container hidden"><p id="errorMessage"></p></div>
     </div>
 
-    <!-- THREATS LIST -->
-    <div id="threatsSection" class="hidden">
-      <div class="cyber-card">
-        <div class="card-title">Detected Threats</div>
-        <div id="threatsList"></div>
-      </div>
-    </div>
+    <div id="progressModal" class="modal hidden"><div class="modal-content"><div class="modal-header"><h3>🔍 Analysis in Progress</h3></div><div class="modal-body"><div class="progress-info"><p id="progressStep" class="progress-step">Initializing...</p><div class="progress-bar-container"><div id="progressBar" class="progress-bar-fill" style="width: 0%"></div></div><p id="progressPercent" class="progress-percent">0%</p></div><div id="progressSteps" class="progress-steps-list"></div></div></div></div>
 
-    <!-- DOWNLOAD -->
-    <div style="margin-top:20px;text-align:right" id="downloadSection">
-      <button class="btn-green" onclick="downloadPcapReport()">⬇ Download Report</button>
-    </div>
-
-  </div>
-</div>
-
-<!-- PROGRESS MODAL -->
-<div id="progressModal" class="progress-overlay hidden">
-  <div class="progress-box">
-    <div class="progress-title" id="progressTitle">Initializing analysis...</div>
-    <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
-    <div class="progress-label" id="progressLabel">0%</div>
-    <div class="progress-log" id="progressLog"></div>
-  </div>
-</div>
-
-<script src="shared.js"></script>
-<script src="pcap.js"></script>
-<script>
-  const pcapZone = document.getElementById('pcapDropZone');
-  pcapZone.addEventListener('dragover', e => { e.preventDefault(); pcapZone.classList.add('dragover'); });
-  pcapZone.addEventListener('dragleave', () => pcapZone.classList.remove('dragover'));
-  pcapZone.addEventListener('drop', e => {
-    e.preventDefault();
-    pcapZone.classList.remove('dragover');
-    const file = e.dataTransfer.files[0];
-    if (file) loadPcapFile(file);
-  });
-</script>
+    <script src="script.js"></script>
 </body>
 </html>
