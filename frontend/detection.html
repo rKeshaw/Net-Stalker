@@ -1,196 +1,120 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>PHISH-NET — Threat Detection</title>
-  <link rel="stylesheet" href="style.css">
-  <style>
-    .input-label{font-family:var(--font-mono);font-size:0.72rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:7px;display:block}
-    .input-group{margin-bottom:16px}
-    .detection-page-hero{padding:32px 0 28px;border-bottom:1px solid var(--border-dim);margin-bottom:32px}
-    .detection-page-hero h1{font-family:var(--font-display);font-size:1.4rem;color:var(--accent-cyan);letter-spacing:4px;text-transform:uppercase;margin-bottom:6px}
-    .detection-page-hero p{font-family:var(--font-mono);font-size:0.8rem;color:var(--text-secondary)}
-    .cmd-prompt{font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);margin-bottom:20px}
-    .cmd-prompt span{color:var(--accent-green)}
-    .qr-drop-zone{border:1px dashed var(--border-normal);border-radius:var(--radius-lg);padding:35px 20px;text-align:center;cursor:pointer;transition:var(--transition);background:rgba(0,212,255,0.02);position:relative}
-    .qr-drop-zone:hover,.qr-drop-zone.dragover{border-color:var(--accent-cyan);background:rgba(0,212,255,0.05);box-shadow:var(--glow-cyan)}
-    .qr-drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-    .qr-preview{max-width:160px;margin:12px auto 0;display:block;border-radius:var(--radius-md);border:1px solid var(--border-normal)}
-    .qr-file-name{font-family:var(--font-mono);font-size:0.75rem;color:var(--accent-cyan);margin-top:10px;text-align:center}
-    .options-row{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:14px 0;border-top:1px solid var(--border-dim);margin-top:14px}
-    .options-label{font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px}
-    #errorBanner{background:rgba(255,34,68,0.08);border:1px solid var(--border-red);border-radius:var(--radius-md);padding:13px 16px;font-family:var(--font-mono);font-size:0.8rem;color:var(--accent-red);margin-bottom:16px;display:none}
-    #errorBanner::before{content:'⚠  '}
-    .result-block{margin-top:28px}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PhishNet | Phishing Detection</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
-<body>
-<div class="hex-bg"></div>
-<div class="scanlines"></div>
+<body class="cyber-body">
+    <div class="container">
+        <header class="cyber-shell">
+            <div class="workspace-nav">
+                <a href="index.html" class="action-btn secondary">← Home</a>
+                <a href="pcap.html" class="action-btn secondary">Packet Analysis</a>
+            </div>
+            <h1>🛡️ PhishNet — Phishing Detection</h1>
+            <p class="subtitle">URL • Email • Text • QR Forensics</p>
+        </header>
 
-<!-- NAV -->
-<nav class="nav-bar">
-  <a href="index.html" class="nav-logo">⬡ PHISH<em>-NET</em></a>
-  <ul class="nav-links">
-    <li><a href="index.html">Home</a></li>
-    <li><a href="detection.html" class="active">Threat Detection</a></li>
-    <li><a href="pcap.html">Network Forensics</a></li>
-  </ul>
-  <div class="nav-status"><span class="status-dot"></span>ENGINE ONLINE</div>
-</nav>
-
-<div class="page-wrapper">
-  <div class="detection-page-hero">
-    <div class="cmd-prompt">root@phishnet:~$ <span>./threat-detection --interactive</span></div>
-    <h1>⬡ Threat Detection</h1>
-    <p>AI-powered analysis of URLs, emails, text content, and QR codes for phishing and social engineering threats.</p>
-  </div>
-
-  <!-- TABS -->
-  <div class="cyber-tabs" id="mainTabs">
-    <button class="tab-btn active" data-tab="url">⬡ URL Scan</button>
-    <button class="tab-btn" data-tab="email">✉ Email Analysis</button>
-    <button class="tab-btn" data-tab="text">⌨ Text Analysis</button>
-    <button class="tab-btn" data-tab="qr">⊞ QR Decoder</button>
-  </div>
-
-  <!-- ERROR BANNER -->
-  <div id="errorBanner"></div>
-
-  <!-- TAB: URL -->
-  <div class="tab-content active" id="tab-url">
-    <div class="cyber-card">
-      <div class="card-title">URL Analysis Module</div>
-      <div class="input-group">
-        <label class="input-label" for="urlInput">Target URL</label>
-        <div class="input-row">
-          <input type="text" id="urlInput" class="cyber-input" placeholder="https://example.com/suspicious-page" autocomplete="off" spellcheck="false">
-          <button class="btn-primary" id="analyzeUrlBtn" onclick="analyzeURL()">SCAN</button>
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('url', this)">🔗 URL Analysis</button>
+            <button class="tab-button" onclick="switchTab('email', this)">📧 Email Analysis</button>
+            <button class="tab-button" onclick="switchTab('text', this)">📝 Text Analysis</button>
+            <button class="tab-button" onclick="switchTab('qr', this)">📱 QR Analysis</button>
         </div>
-      </div>
-      <div class="options-row">
-        <span class="options-label">Modules:</span>
-        <div class="toggle-group" style="margin:0">
-          <label class="toggle-item"><input type="checkbox" id="urlUseBrowser" checked> Browser Emulation</label>
-          <label class="toggle-item"><input type="checkbox" id="urlUseHoneypot" checked> Honeypot Test</label>
-          <label class="toggle-item"><input type="checkbox" id="urlUseDeepScan"> Deep Scan</label>
+
+        <div id="urlTab" class="tab-content active"><div class="analyzer-section">
+            <h2>🔗 URL Analysis</h2>
+            <div class="input-group">
+                <input type="text" id="urlInput" placeholder="Enter URL to analyze (e.g., https://example.com)" autocomplete="off" />
+                <button id="analyzeUrlBtn" onclick="analyzeURL()"><span id="urlBtnText">Analyze</span><span id="urlBtnLoader" class="loader hidden"></span></button>
+            </div>
+            <p class="help-text">Enter a complete URL including http:// or https://</p>
+            <div class="toggle-group">
+                <label><input type="checkbox" id="urlEnableBehavioral" checked> Enable behavioral browser analysis</label>
+                <label><input type="checkbox" id="urlEnableLiveCapture" checked> Enable live packet capture</label>
+            </div>
+        </div></div>
+
+        <div id="emailTab" class="tab-content"><div class="analyzer-section">
+            <h2>📧 Email Analysis</h2>
+            <div class="upload-area" id="emailUploadArea">
+                <input type="file" id="emailFileInput" accept=".eml" style="display:none;" onchange="handleEmailFile(this)" />
+                <div class="upload-prompt" onclick="document.getElementById('emailFileInput').click()"><div class="upload-icon">📎</div><p><strong>Click to upload</strong> or drag and drop</p><p class="upload-hint">Email files (.eml) only</p></div>
+            </div>
+            <div id="emailFileInfo" class="file-info hidden"><span id="emailFileName"></span><button onclick="clearEmailFile()" class="clear-btn">✕</button></div>
+            <button id="analyzeEmailBtn" onclick="analyzeEmail()" class="hidden"><span id="emailBtnText">Analyze Email</span><span id="emailBtnLoader" class="loader hidden"></span></button>
+        </div></div>
+
+        <div id="textTab" class="tab-content"><div class="analyzer-section">
+            <h2>📝 Text Analysis</h2>
+            <textarea id="textInput" placeholder="Paste email content, message, or any suspicious text here..." rows="10"></textarea>
+            <button id="analyzeTextBtn" onclick="analyzeText()"><span id="textBtnText">Analyze Text</span><span id="textBtnLoader" class="loader hidden"></span></button>
+            <p class="help-text">Minimum 10 characters required</p>
+        </div></div>
+
+        <div id="qrTab" class="tab-content"><div class="analyzer-section">
+            <h2>📱 QR Code Forensics</h2>
+            <div class="upload-area" id="qrUploadArea">
+                <input type="file" id="qrFileInput" accept="image/*" style="display:none;" onchange="handleQRFile(this)" />
+                <div class="upload-prompt" onclick="document.getElementById('qrFileInput').click()"><div class="upload-icon">📸</div><p><strong>Click to upload</strong> or drag and drop QR image</p><p class="upload-hint">Supports .png, .jpg, .jpeg</p></div>
+            </div>
+            <div id="qrFileInfo" class="file-info hidden"><span id="qrFileName"></span><button onclick="clearQRFile()" class="clear-btn">✕</button></div>
+            <div class="toggle-group">
+                <label><input type="checkbox" id="qrEnableBehavioral" checked> Deep URL behavioral scan for QR URLs</label>
+                <label><input type="checkbox" id="qrEnableLiveCapture" checked> Enable live packet capture</label>
+            </div>
+            <button id="analyzeQRBtn" onclick="analyzeQR()" class="hidden"><span id="qrBtnText">Analyze QR Code</span><span id="qrBtnLoader" class="loader hidden"></span></button>
+        </div></div>
+
+        <!-- Shared result workspace -->
+        <div id="resultsContainer" class="hidden">
+            <div class="results-header">
+                <div class="header-left"><h2>Analysis Results</h2><div class="analysis-type-badge" id="analysisTypeBadge"></div></div>
+                <div class="header-right" style="display:flex;gap:10px;align-items:center;">
+                    <div id="verdictBadge" class="verdict-badge hidden"></div>
+                    <button id="downloadPcapBtn" class="action-btn secondary hidden" onclick="downloadPcap()">📡 Download PCAP</button>
+                    <button id="downloadReportBtn" class="action-btn hidden" onclick="downloadReport()">📄 Download PDF Report</button>
+                    <button id="resetResultsBtn" class="action-btn secondary" onclick="resetResults()">♻️ Reset</button>
+                </div>
+            </div>
+            <div id="standardResultsWrapper">
+                <div class="result-card"><h3>🎯 Risk Assessment</h3><div class="risk-score-container"><div class="risk-score" id="riskScore">0</div><div class="risk-label">Risk Score</div></div><div class="confidence">Confidence: <span id="confidence">0%</span></div></div>
+                <div class="result-card"><h3>🔍 Analysis Summary</h3><p id="reasoning" class="reasoning"></p></div>
+                <div class="result-card"><h3>⚠️ Detected Indicators</h3><ul id="indicatorsList" class="indicators-list"></ul></div>
+                <div class="result-card collapsible"><h3 onclick="toggleSection('technicalDetails')">🔧 Technical Details <span class="toggle-icon">▼</span></h3><div id="technicalDetails" class="collapsible-content"><div id="technicalDetailsContent"></div></div></div>
+            </div>
+            <div id="pcapResultsWrapper" class="hidden">
+                <div class="result-card"><h3>📊 Traffic Statistics</h3><div class="tech-grid" id="pcapStatsGrid"></div></div>
+                <div class="result-card"><h3>🥧 Protocol Distribution</h3><div id="protocolChart" style="width:100%; height:400px;"></div></div>
+                <div class="result-card"><h3>📈 Traffic Flow (Time Series)</h3><div id="timeFlowChart" style="width:100%; height:350px;"></div></div>
+                <div class="result-card"><h3>📏 Packet Length Distribution</h3><div id="packetLenChart" style="width:100%; height:350px;"></div></div>
+                <div class="result-card"><h3>🧾 Packet Listing & Filters</h3>
+                    <div class="packet-filters">
+                        <select id="packetProtocolFilter" onchange="applyPacketFilters()"><option value="">All Protocols</option></select>
+                        <input type="text" id="packetSourceFilter" placeholder="Filter source IP/port" oninput="applyPacketFilters()" />
+                        <input type="text" id="packetDestFilter" placeholder="Filter destination IP/port" oninput="applyPacketFilters()" />
+                        <input type="text" id="packetInfoFilter" placeholder="Filter packet info/summary" oninput="applyPacketFilters()" />
+                    </div>
+                    <div class="packet-table-meta" id="packetTableMeta">Showing 0 of 0 packets</div>
+                    <div class="packet-table-wrapper"><table class="packet-table"><thead><tr><th>#</th><th>Time</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Length</th><th>Info</th></tr></thead><tbody id="packetTableBody"></tbody></table></div>
+                </div>
+            </div>
+            <div id="geoMapCard" class="result-card hidden"><h3>🌍 Server Infrastructure & Location</h3><div class="map-container"><div id="phishingMap" style="height:300px; width:100%; border-radius:8px; z-index:1;"></div></div><div id="geoDetails" class="geo-grid" style="margin-top:15px; display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;"></div></div>
+            <div id="externalApiCard" class="result-card collapsible hidden"><h3 onclick="toggleSection('externalApiResults')">🌐 External Threat Intelligence <span class="toggle-icon">▼</span></h3><div id="externalApiResults" class="collapsible-content"><div id="externalApiSummary" class="api-summary"></div><div id="externalApiDetails" class="api-details-grid"></div></div></div>
+            <div id="behavioralCard" class="result-card collapsible hidden"><h3 onclick="toggleSection('behavioralResults')">🎭 Behavioral Analysis <span class="toggle-icon">▼</span></h3><div id="behavioralResults" class="collapsible-content"><div id="behavioralSummary" class="behavioral-summary"></div><div id="behavioralDetails" class="behavioral-details"></div></div></div>
         </div>
-      </div>
+
+        <div id="errorContainer" class="error-container hidden"><p id="errorMessage"></p></div>
     </div>
-  </div>
 
-  <!-- TAB: EMAIL -->
-  <div class="tab-content" id="tab-email">
-    <div class="cyber-card">
-      <div class="card-title">Email Forensics Module</div>
-      <div class="input-group">
-        <label class="input-label">Sender Address</label>
-        <input type="text" id="emailFrom" class="cyber-input" placeholder="suspicious@domain.com" style="margin-bottom:10px">
-      </div>
-      <div class="input-group">
-        <label class="input-label">Subject Line</label>
-        <input type="text" id="emailSubject" class="cyber-input" placeholder="Your account has been compromised..." style="margin-bottom:10px">
-      </div>
-      <div class="input-group">
-        <label class="input-label">Email Body</label>
-        <textarea id="emailBody" class="cyber-input" placeholder="Paste the full email body here..."></textarea>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="btn-ghost" onclick="clearEmailForm()">CLEAR</button>
-        <button class="btn-primary" id="analyzeEmailBtn" onclick="analyzeEmail()">ANALYZE EMAIL</button>
-      </div>
-    </div>
-  </div>
+    <div id="progressModal" class="modal hidden"><div class="modal-content"><div class="modal-header"><h3>🔍 Analysis in Progress</h3></div><div class="modal-body"><div class="progress-info"><p id="progressStep" class="progress-step">Initializing...</p><div class="progress-bar-container"><div id="progressBar" class="progress-bar-fill" style="width: 0%"></div></div><p id="progressPercent" class="progress-percent">0%</p></div><div id="progressSteps" class="progress-steps-list"></div></div></div></div>
 
-  <!-- TAB: TEXT -->
-  <div class="tab-content" id="tab-text">
-    <div class="cyber-card">
-      <div class="card-title">Text Content Analysis</div>
-      <div class="input-group">
-        <label class="input-label">Suspicious Text / Message</label>
-        <textarea id="textInput" class="cyber-input" placeholder="Paste any text you want to analyze for phishing indicators, social engineering, or malicious content..."></textarea>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="btn-ghost" onclick="document.getElementById('textInput').value=''">CLEAR</button>
-        <button class="btn-primary" id="analyzeTextBtn" onclick="analyzeText()">ANALYZE TEXT</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- TAB: QR -->
-  <div class="tab-content" id="tab-qr">
-    <div class="cyber-card">
-      <div class="card-title">QR Code Decoder + Analysis</div>
-      <p style="font-family:var(--font-mono);font-size:0.78rem;color:var(--text-secondary);margin-bottom:16px">Upload a QR code image to decode and analyze its embedded URL or payload for threats.</p>
-      <div class="qr-drop-zone" id="qrDropZone">
-        <input type="file" id="qrFileInput" accept="image/*" onchange="handleQRFile(event)">
-        <div id="qrDropContent">
-          <div style="font-size:2.5rem;margin-bottom:10px;opacity:0.5">⊞</div>
-          <div style="font-family:var(--font-display);font-size:0.8rem;color:var(--accent-cyan);letter-spacing:2px">DROP QR IMAGE</div>
-          <div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);margin-top:6px">or click to browse — PNG, JPG, WEBP</div>
-        </div>
-        <img id="qrPreview" class="qr-preview hidden">
-      </div>
-      <div id="qrFileName" class="qr-file-name hidden"></div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
-        <button class="btn-ghost" onclick="clearQR()">CLEAR</button>
-        <button class="btn-primary" id="analyzeQrBtn" onclick="analyzeQR()">DECODE &amp; SCAN</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- RESULTS -->
-  <div class="result-block hidden" id="resultsBlock"></div>
-
-  <!-- BEHAVIORAL RESULTS -->
-  <div class="result-block hidden" id="behavioralBlock"></div>
-
-  <!-- TECHNICAL DETAILS -->
-  <div class="result-block hidden" id="technicalBlock"></div>
-
-  <!-- EXTERNAL APIs -->
-  <div class="result-block hidden" id="externalBlock"></div>
-
-  <!-- HONEYPOT RESULTS -->
-  <div class="result-block hidden" id="honeypotBlock"></div>
-</div>
-
-<!-- PROGRESS MODAL -->
-<div id="progressModal" class="progress-overlay hidden">
-  <div class="progress-box">
-    <div class="progress-title" id="progressTitle">Initializing scan...</div>
-    <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
-    <div class="progress-label" id="progressLabel">0%</div>
-    <div class="progress-log" id="progressLog"></div>
-  </div>
-</div>
-
-<script src="shared.js"></script>
-<script src="detection.js"></script>
-<script>
-// Tab switching
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-' + tab).classList.add('active');
-    resetUI();
-  });
-});
-
-// QR drag events
-const qrZone = document.getElementById('qrDropZone');
-qrZone.addEventListener('dragover', e => { e.preventDefault(); qrZone.classList.add('dragover'); });
-qrZone.addEventListener('dragleave', () => qrZone.classList.remove('dragover'));
-qrZone.addEventListener('drop', e => {
-  e.preventDefault();
-  qrZone.classList.remove('dragover');
-  const file = e.dataTransfer.files[0];
-  if (file) loadQRPreview(file);
-});
-</script>
+    <script src="script.js"></script>
 </body>
 </html>
