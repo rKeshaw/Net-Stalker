@@ -8,8 +8,22 @@ let mapInstance = null;
 let currentTaskId = null;
 let pcapCharts = [];
 let currentPcapFilename = null;
+let pcapPacketRows = [];
 
-function switchTab(tabName) {
+function switchSection(sectionName, buttonElement = null) {
+    document.querySelectorAll('.main-section').forEach(section => section.classList.remove('active'));
+    document.querySelectorAll('.top-nav-button').forEach(btn => btn.classList.remove('active'));
+
+    const section = document.getElementById(`${sectionName}Section`);
+    if (section) section.classList.add('active');
+
+    const navBtn = buttonElement || document.querySelector(`.top-nav-button[onclick*="${sectionName}"]`);
+    if (navBtn) navBtn.classList.add('active');
+
+    document.getElementById('errorContainer').classList.add('hidden');
+}
+
+function switchTab(tabName, buttonElement = null) {
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
     });
@@ -17,8 +31,9 @@ function switchTab(tabName) {
         btn.classList.remove('active');
     });
     
-    document.getElementById(`${tabName}Tab`).classList.add('active');
-    event.target.classList.add('active');
+    const targetTab = document.getElementById(`${tabName}Tab`);
+    if (targetTab) targetTab.classList.add('active');
+    if (buttonElement) buttonElement.classList.add('active');
     
     document.getElementById('errorContainer').classList.add('hidden');
 }
@@ -438,11 +453,15 @@ async function analyzePcap() {
         }
         
         const data = await response.json();
+        const normalized = {
+            ...data,
+            analysis_type: data.analysis_type || 'pcap'
+        };
         updateProgress(100, "Complete", []);
         
         setTimeout(() => {
             hideProgressModal();
-            displayResults(data);
+            displayResults(normalized);
         }, 500);
         
     } catch (error) {
@@ -472,16 +491,16 @@ function renderCharts(data) {
 
         const protoChart = echarts.init(document.getElementById('protocolChart'));
         const protoOption = {
-            tooltip: { trigger: 'item' },
-            legend: { top: '5%', left: 'center' },
+            tooltip: { trigger: 'item', backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: '#22d3ee', textStyle: { color: '#e2e8f0' } },
+            legend: { top: '5%', left: 'center', textStyle: { color: '#94a3b8' } },
             series: [{
                 name: 'Protocols',
                 type: 'pie',
                 radius: ['40%', '70%'],
                 avoidLabelOverlap: false,
-                itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+                itemStyle: { borderRadius: 10, borderColor: '#0f172a', borderWidth: 2 },
                 label: { show: false, position: 'center' },
-                emphasis: { label: { show: true, fontSize: 40, fontWeight: 'bold' } },
+                emphasis: { label: { show: true, fontSize: 40, fontWeight: 'bold', color: '#67e8f9' } },
                 data: protoData
             }]
         };
@@ -499,11 +518,11 @@ function renderCharts(data) {
 
         const timeChart = echarts.init(document.getElementById('timeFlowChart'));
         const timeOption = {
-            title: { text: 'Traffic Volume over Time', left: 'center' },
-            tooltip: { trigger: 'axis' },
-            xAxis: { type: 'category', data: xData, name: 'Seconds' },
-            yAxis: { type: 'value', name: 'Bytes' },
-            series: [{ data: yData, type: 'line', smooth: true, areaStyle: {} }]
+            title: { text: 'Traffic Volume over Time', left: 'center', textStyle: { color: '#67e8f9' } },
+            tooltip: { trigger: 'axis', backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: '#22d3ee', textStyle: { color: '#e2e8f0' } },
+            xAxis: { type: 'category', data: xData, name: 'Seconds', axisLabel: { color: '#94a3b8' } },
+            yAxis: { type: 'value', name: 'Bytes', splitLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#94a3b8' } },
+            series: [{ data: yData, type: 'line', smooth: true, areaStyle: { color: 'rgba(34,211,238,0.2)' }, lineStyle: { color: '#22d3ee' }, itemStyle: { color: '#22d3ee' } }]
         };
         timeChart.setOption(timeOption);
         pcapCharts.push(timeChart);
@@ -517,12 +536,12 @@ function renderCharts(data) {
 
         const lenChart = echarts.init(document.getElementById('packetLenChart'));
         const lenOption = {
-            title: { text: 'Packet Size Distribution', left: 'center' },
-            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            title: { text: 'Packet Size Distribution', left: 'center', textStyle: { color: '#67e8f9' } },
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: '#22d3ee', textStyle: { color: '#e2e8f0' } },
             grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-            xAxis: { type: 'category', data: xData },
-            yAxis: { type: 'value' },
-            series: [{ name: 'Count', type: 'bar', data: yData, color: '#667eea' }]
+            xAxis: { type: 'category', data: xData, axisLabel: { color: '#94a3b8' } },
+            yAxis: { type: 'value', splitLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#94a3b8' } },
+            series: [{ name: 'Count', type: 'bar', data: yData, color: '#e879f9', itemStyle: { borderRadius: [4, 4, 0, 0] } }]
         };
         lenChart.setOption(lenOption);
         pcapCharts.push(lenChart);
@@ -531,6 +550,83 @@ function renderCharts(data) {
     requestAnimationFrame(() => {
         setTimeout(resizePcapCharts, 80);
     });
+}
+
+function renderPacketTable(rawPackets = []) {
+    pcapPacketRows = (rawPackets || []).map((packet, index) => ({
+        id: packet.id || index + 1,
+        time: packet.time || '-',
+        protocol: packet.Procotol || packet.Protocol || 'Unknown',
+        source: packet.Source || 'Unknown',
+        destination: packet.Destination || 'Unknown',
+        length: packet.len ?? '-',
+        info: packet.info || ''
+    }));
+
+    const protocolFilter = document.getElementById('packetProtocolFilter');
+    if (!protocolFilter) return;
+    protocolFilter.innerHTML = '<option value="">All Protocols</option>';
+    [...new Set(pcapPacketRows.map(p => p.protocol).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b))
+        .forEach(protocol => {
+            const option = document.createElement('option');
+            option.value = protocol;
+            option.textContent = protocol;
+            protocolFilter.appendChild(option);
+        });
+
+    document.getElementById('packetSourceFilter').value = '';
+    document.getElementById('packetDestFilter').value = '';
+    document.getElementById('packetInfoFilter').value = '';
+
+    applyPacketFilters();
+}
+
+function applyPacketFilters() {
+    const protocolEl = document.getElementById('packetProtocolFilter');
+    const sourceEl = document.getElementById('packetSourceFilter');
+    const destinationEl = document.getElementById('packetDestFilter');
+    const infoEl = document.getElementById('packetInfoFilter');
+    const body = document.getElementById('packetTableBody');
+    const meta = document.getElementById('packetTableMeta');
+
+    if (!protocolEl || !sourceEl || !destinationEl || !infoEl || !body || !meta) return;
+
+    const protocol = (protocolEl.value || '').toLowerCase();
+    const source = (sourceEl.value || '').toLowerCase();
+    const destination = (destinationEl.value || '').toLowerCase();
+    const info = (infoEl.value || '').toLowerCase();
+
+    const filtered = pcapPacketRows.filter(row => {
+        if (protocol && !row.protocol.toLowerCase().includes(protocol)) return false;
+        if (source && !row.source.toLowerCase().includes(source)) return false;
+        if (destination && !row.destination.toLowerCase().includes(destination)) return false;
+        if (info && !row.info.toLowerCase().includes(info)) return false;
+        return true;
+    });
+
+    body.innerHTML = filtered.map(row => `
+        <tr>
+            <td>${row.id}</td>
+            <td>${escapeHtml(row.time)}</td>
+            <td>${escapeHtml(row.protocol)}</td>
+            <td>${escapeHtml(row.source)}</td>
+            <td>${escapeHtml(row.destination)}</td>
+            <td>${escapeHtml(String(row.length))}</td>
+            <td class="pkt-info" title="${escapeHtml(row.info)}">${escapeHtml(row.info)}</td>
+        </tr>
+    `).join('');
+
+    meta.textContent = `Showing ${filtered.length} of ${pcapPacketRows.length} packets`;
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 function displayGeoMap(features) {
@@ -631,11 +727,11 @@ function displayGeoMap(features) {
             if (isPcap) {
                 coords = [loc.coordinates[1], loc.coordinates[0]];
                 popupText = `<b>${loc.ip}</b><br>${loc.location}<br>Traffic: ${loc.traffic} KB`;
-                color = '#3388ff';
+                color = '#06b6d4';
             } else {
                 coords = [loc.lat, loc.lon];
                 popupText = `<b>${loc.domain}</b><br>${loc.city}, ${loc.country}`;
-                color = loc.type === 'Final Destination' ? '#dc3545' : (loc.type === 'Initial' ? '#28a745' : '#3388ff');
+                color = loc.type === 'Final Destination' ? '#ef4444' : (loc.type === 'Initial' ? '#22c55e' : '#06b6d4');
             }
 
             latlngs.push(coords);
@@ -731,9 +827,9 @@ function createBehavioralSummary(behavioral) {
         </div>
         
         ${behavioral.final_url !== behavioral.url ? `
-            <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-radius: 6px; border-left: 4px solid #ffc107;">
-                <strong>⚠️ URL Redirect Detected</strong><br>
-                <small style="color: #666;">Final URL: ${behavioral.final_url}</small>
+            <div style="margin-top: 15px; padding: 12px; background: rgba(234, 179, 8, 0.1); border-radius: 6px; border-left: 4px solid #eab308;">
+                <strong style="color: #fef08a;">⚠️ URL Redirect Detected</strong><br>
+                <small style="color: #94a3b8;">Final URL: ${behavioral.final_url}</small>
             </div>
         ` : ''}
     `;
@@ -908,9 +1004,9 @@ function createBehavioralDetails(behavioral) {
                     ).join('')}
                 </div>
                 ${behavioral.brand_indicators.has_brand_impersonation ? `
-                    <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-radius: 6px; border-left: 4px solid #ffc107;">
-                        <strong>⚠️ Possible Brand Impersonation</strong><br>
-                        <small>Verify this is an official ${behavioral.brand_indicators.detected_brands[0]} website</small>
+                    <div style="margin-top: 15px; padding: 12px; background: rgba(234, 179, 8, 0.1); border-radius: 6px; border-left: 4px solid #eab308;">
+                        <strong style="color: #fef08a;">⚠️ Possible Brand Impersonation</strong><br>
+                        <small style="color: #94a3b8;">Verify this is an official ${behavioral.brand_indicators.detected_brands[0]} website</small>
                     </div>
                 ` : ''}
             </div>
@@ -1055,10 +1151,10 @@ function createHoneypotSection(honeypot) {
                             <p><strong>Action:</strong> ${submission.action || 'N/A'}</p>
                             <p><strong>Fields Filled:</strong> ${submission.inputs_filled ? submission.inputs_filled.length : 0}</p>
                             ${urlChanged ? `
-                                <div style="margin-top: 10px; padding: 10px; background: #fff3cd; border-radius: 4px; border-left: 3px solid #ffc107;">
-                                    <strong>URL Changed After Submission:</strong><br>
-                                    <small>From: ${submission.pre_submission_url}</small><br>
-                                    <small>To: ${submission.post_submission_url}</small>
+                                <div style="margin-top: 10px; padding: 10px; background: rgba(234, 179, 8, 0.1); border-radius: 4px; border-left: 3px solid #eab308;">
+                                    <strong style="color: #fef08a;">URL Changed After Submission:</strong><br>
+                                    <small style="color: #94a3b8;">From: ${submission.pre_submission_url}</small><br>
+                                    <small style="color: #94a3b8;">To: ${submission.post_submission_url}</small>
                                 </div>
                             ` : ''}
                         </div>
@@ -1340,6 +1436,7 @@ function displayResults(data) {
         pcapWrapper.classList.remove('hidden');
         renderPcapStats(data.statistics, data.metadata);
         renderCharts(data);
+        renderPacketTable(data.raw_packets || data.raw_packets_sample || []);
         
         if (data.geo_map && data.geo_map.ip_data) {
             displayGeoMap({ geo_map: data.geo_map });
@@ -1385,6 +1482,7 @@ function displayResults(data) {
 
             renderPcapStats(embeddedPcap.statistics, embeddedPcap.metadata);
             renderCharts(embeddedPcap);
+            renderPacketTable(embeddedPcap.raw_packets || embeddedPcap.raw_packets_sample || []);
 
             const pcapPath = behavioral.pcap_path || features.pcap_path;
             if (pcapPath) {
@@ -2262,6 +2360,12 @@ function resetResults() {
         try { chart.dispose(); } catch (e) {}
     });
     pcapCharts = [];
+    pcapPacketRows = [];
+
+    const packetTableBody = document.getElementById('packetTableBody');
+    if (packetTableBody) packetTableBody.innerHTML = '';
+    const packetTableMeta = document.getElementById('packetTableMeta');
+    if (packetTableMeta) packetTableMeta.textContent = 'Showing 0 of 0 packets';
 }
 
 function setButtonLoading(button, textSpan, loaderSpan, isLoading) {
@@ -2305,110 +2409,61 @@ function toggleSection(sectionId) {
         : 'rotate(0deg)';
 }
 
-const uploadArea = document.getElementById('emailUploadArea');
-
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    uploadArea.addEventListener(eventName, preventDefaults, false);
-});
+const emailUploadArea = document.getElementById('emailUploadArea');
+const qrUploadArea = document.getElementById('qrUploadArea');
+const pcapUploadArea = document.getElementById('pcapUploadArea');
 
 function preventDefaults(e) {
     e.preventDefault();
     e.stopPropagation();
 }
 
-['dragenter', 'dragover'].forEach(eventName => {
-    uploadArea.addEventListener(eventName, () => {
-        uploadArea.classList.add('drag-over');
-    }, false);
-});
+function wireDragAndDrop(area, onDrop) {
+    if (!area) return;
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        area.addEventListener(eventName, preventDefaults, false);
+    });
 
-['dragleave', 'drop'].forEach(eventName => {
-    uploadArea.addEventListener(eventName, () => {
-        uploadArea.classList.remove('drag-over');
-    }, false);
-});
+    ['dragenter', 'dragover'].forEach(eventName => {
+        area.addEventListener(eventName, () => area.classList.add('drag-over'), false);
+    });
 
-uploadArea.addEventListener('drop', handleDrop, false);
+    ['dragleave', 'drop'].forEach(eventName => {
+        area.addEventListener(eventName, () => area.classList.remove('drag-over'), false);
+    });
 
-function handleDrop(e) {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    
+    area.addEventListener('drop', onDrop, false);
+}
+
+wireDragAndDrop(emailUploadArea, (e) => {
+    const files = e.dataTransfer.files;
     if (files.length > 0) {
         document.getElementById('emailFileInput').files = files;
         handleEmailFile(document.getElementById('emailFileInput'));
     }
-}
-
-const qrUploadArea = document.getElementById('qrUploadArea');
-
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    qrUploadArea.addEventListener(eventName, preventDefaults, false);
 });
 
-function preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
-}
-
-['dragenter', 'dragover'].forEach(eventName => {
-    qrUploadArea.addEventListener(eventName, () => {
-        qrUploadArea.classList.add('drag-over');
-    }, false);
-});
-
-['dragleave', 'drop'].forEach(eventName => {
-    qrUploadArea.addEventListener(eventName, () => {
-        qrUploadArea.classList.remove('drag-over');
-    }, false);
-});
-
-qrUploadArea.addEventListener('drop', handleDrop, false);
-
-function handleDrop(e) {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    
+wireDragAndDrop(qrUploadArea, (e) => {
+    const files = e.dataTransfer.files;
     if (files.length > 0) {
         document.getElementById('qrFileInput').files = files;
         handleQRFile(document.getElementById('qrFileInput'));
     }
-}
-
-const pcapUploadArea = document.getElementById('pcapUploadArea');
-
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    pcapUploadArea.addEventListener(eventName, preventDefaults, false);
 });
 
-['dragenter', 'dragover'].forEach(eventName => {
-    pcapUploadArea.addEventListener(eventName, () => {
-        pcapUploadArea.classList.add('drag-over');
-    }, false);
-});
-
-['dragleave', 'drop'].forEach(eventName => {
-    pcapUploadArea.addEventListener(eventName, () => {
-        pcapUploadArea.classList.remove('drag-over');
-    }, false);
-});
-
-pcapUploadArea.addEventListener('drop', handlePcapDrop, false);
-
-function handlePcapDrop(e) {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    
+wireDragAndDrop(pcapUploadArea, (e) => {
+    const files = e.dataTransfer.files;
     if (files.length > 0) {
         document.getElementById('pcapFileInput').files = files;
         handlePcapFile(document.getElementById('pcapFileInput'));
     }
-}
-
-document.getElementById('urlInput').addEventListener('keypress', function(event) {
-    if (event.key === 'Enter') {
-        analyzeURL();
-    }
 });
+
+const urlInputEl = document.getElementById('urlInput');
+if (urlInputEl) {
+    urlInputEl.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') analyzeURL();
+    });
+}
 
 window.addEventListener('resize', resizePcapCharts);
