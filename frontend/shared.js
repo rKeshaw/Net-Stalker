@@ -75,11 +75,11 @@ function updateProgress(pct, logMsg = '') {
 async function pollTaskStatus(taskId, onProgress, onDone, onError) {
   const pollInterval = setInterval(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/task-status/${taskId}`);
+      const res = await fetch(`${API_URL}/task/${taskId}`);
       if (!res.ok) throw new Error('Status check failed');
       const data = await res.json();
 
-      if (data.progress !== undefined) onProgress(data.progress, data.message || '');
+      if (data.progress !== undefined) onProgress(data.progress, data.current_step || data.message || '');
 
       if (data.status === 'completed') {
         clearInterval(pollInterval);
@@ -97,34 +97,33 @@ async function pollTaskStatus(taskId, onProgress, onDone, onError) {
 
 async function streamTaskProgress(taskId, onProgress, onDone, onError) {
   try {
-    const res = await fetch(`${API_URL}/api/task-stream/${taskId}`);
-    if (!res.ok) {
-      // Fall back to polling
-      pollTaskStatus(taskId, onProgress, onDone, onError);
-      return;
-    }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    const pump = async () => {
-      const { done, value } = await reader.read();
-      if (done) return;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue;
-        try {
-          const evt = JSON.parse(line.slice(5).trim());
-          if (evt.progress !== undefined) onProgress(evt.progress, evt.message || '');
-          if (evt.status === 'completed') { onDone(evt.result || evt); return; }
-          if (evt.status === 'failed') { onError(evt.error || 'Failed'); return; }
-        } catch { /* skip malformed */ }
+    const source = new EventSource(`${API_URL}/task/${taskId}/stream`);
+    source.onmessage = (event) => {
+      try {
+        const evt = JSON.parse(event.data || '{}');
+        if (evt.error) {
+          source.close();
+          onError(evt.error);
+          return;
+        }
+        if (evt.progress !== undefined) onProgress(evt.progress, evt.current_step || evt.message || '');
+        if (evt.status === 'completed') {
+          source.close();
+          onDone(evt.result || evt);
+          return;
+        }
+        if (evt.status === 'failed') {
+          source.close();
+          onError(evt.error || 'Failed');
+        }
+      } catch {
+        // ignore malformed chunks
       }
-      pump();
     };
-    pump();
+    source.onerror = () => {
+      source.close();
+      pollTaskStatus(taskId, onProgress, onDone, onError);
+    };
   } catch {
     pollTaskStatus(taskId, onProgress, onDone, onError);
   }
@@ -143,11 +142,15 @@ async function apiPost(endpoint, body, isFormData = false) {
   const res = await fetch(API_URL + endpoint, opts);
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
-    try { const d = await res.json(); msg = d.error || d.message || msg; } catch {}
+    try {
+      const d = await res.json();
+      msg = d.detail || d.error || d.message || msg;
+    } catch {}
     throw new Error(msg);
   }
   return res.json();
 }
+
 
 // ── Verdict badge helper ─────────────────────────────────────
 
