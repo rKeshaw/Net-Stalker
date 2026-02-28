@@ -57,7 +57,7 @@ async function analyzePcap() {
     const formData = new FormData();
     formData.append('file', currentPcapFile);
 
-    const data = await apiPost('/api/analyze-pcap', formData, true);
+    const data = await apiPost('/analyze/pcap', formData, true);
 
     if (data.task_id) {
       updateProgress(15, 'Processing packets in background...');
@@ -82,20 +82,39 @@ async function analyzePcap() {
 
 // ── Render results ───────────────────────────────────────────
 
+function normalizePcapResult(data) {
+  const stats = data.statistics || {};
+  const flow = data.flow_analysis || {};
+
+  return {
+    ...data,
+    protocols: data.protocols || stats.protocol_distribution || {},
+    packet_lengths: data.packet_lengths || stats.packet_lengths || {},
+    time_flow: data.time_flow || flow.time_flow || {},
+    dns_queries: data.dns_queries || stats.dns_stats || [],
+    http_requests: data.http_requests || stats.http_stats || [],
+    geo_ips: data.geo_ips || (data.geo_map && data.geo_map.ip_data) || [],
+    total_packets: data.total_packets || (data.metadata && data.metadata.packet_count) || stats.packet_count,
+    duration: data.duration || (data.metadata && data.metadata.duration) || stats.duration_seconds,
+    unique_ips: data.unique_ips || (data.geo_map && data.geo_map.ip_data ? data.geo_map.ip_data.length : null),
+  };
+}
+
 function renderPcapResults(data) {
-  lastPcapResult = data;
+  const normalized = normalizePcapResult(data);
+  lastPcapResult = normalized;
   const container = document.getElementById('pcapResults');
   container.classList.remove('hidden');
 
-  renderThreatHeader(data);
-  renderAISection(data);
-  renderStatsSection(data);
-  renderCharts(data);
-  renderConnections(data);
-  renderDNS(data);
-  renderHTTP(data);
-  renderGeoSection(data);
-  renderThreats(data);
+  renderThreatHeader(normalized);
+  renderAISection(normalized);
+  renderStatsSection(normalized);
+  renderCharts(normalized);
+  renderConnections(normalized);
+  renderDNS(normalized);
+  renderHTTP(normalized);
+  renderGeoSection(normalized);
+  renderThreats(normalized);
 
   container.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
