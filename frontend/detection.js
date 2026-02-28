@@ -21,11 +21,12 @@ async function analyzeURL() {
   updateProgress(5, 'Resolving target...');
 
   try {
-    const data = await apiPost('/api/analyze-url', {
+    const data = await apiPost('/analyze/url', {
       url,
-      use_browser: useBrowser,
-      use_honeypot: useHoneypot,
-      deep_scan: useDeepScan
+      use_external_apis: useHoneypot,
+      async_mode: true,
+      enable_behavioral: useBrowser || useDeepScan,
+      enable_live_capture: useBrowser
     });
 
     if (data.task_id) {
@@ -64,7 +65,20 @@ async function analyzeEmail() {
   updateProgress(5, 'Parsing email headers...');
 
   try {
-    const data = await apiPost('/api/analyze-email', { from, subject, body });
+    const emlContent = [
+      `From: ${from || 'unknown@unknown.local'}`,
+      'To: victim@example.com',
+      `Subject: ${subject || '(No Subject)'}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      body || subject || from,
+    ].join('\r\n');
+
+    const formData = new FormData();
+    formData.append('file', new Blob([emlContent], { type: 'message/rfc822' }), 'frontend-input.eml');
+
+    const data = await apiPost('/analyze/email', formData, true);
 
     if (data.task_id) {
       updateProgress(15, 'Processing...');
@@ -104,7 +118,7 @@ async function analyzeText() {
   updateProgress(5, 'Tokenizing content...');
 
   try {
-    const data = await apiPost('/api/analyze-text', { text });
+    const data = await apiPost('/analyze/text', { text });
 
     if (data.task_id) {
       updateProgress(20, 'Processing...');
@@ -172,7 +186,7 @@ async function analyzeQR() {
     const formData = new FormData();
     formData.append('file', currentQRFile);
 
-    const data = await apiPost('/api/analyze-qr', formData, true);
+    const data = await apiPost('/analyze/qr', formData, true);
 
     if (data.task_id) {
       updateProgress(20, 'Analyzing decoded content...');
@@ -198,52 +212,73 @@ async function analyzeQR() {
 // ── Results Renderer ─────────────────────────────────────────
 
 function displayAllResults(data, type) {
-  lastResult = data;
+  const normalized = normalizeDetectionResult(data, type);
+  lastResult = normalized;
 
   const block = document.getElementById('resultsBlock');
   if (block) {
     block.classList.remove('hidden');
-    block.innerHTML = buildMainResultsHTML(data, type);
+    block.innerHTML = buildMainResultsHTML(normalized, type);
   }
 
-  if (data.behavioral_analysis) {
+  if (normalized.behavioral_analysis) {
     const bBlock = document.getElementById('behavioralBlock');
     if (bBlock) {
       bBlock.classList.remove('hidden');
-      bBlock.innerHTML = buildBehavioralHTML(data.behavioral_analysis);
+      bBlock.innerHTML = buildBehavioralHTML(normalized.behavioral_analysis);
     }
   }
 
-  if (data.technical_details || data.whois || data.ssl_info) {
+  if (normalized.technical_details || normalized.whois || normalized.ssl_info) {
     const tBlock = document.getElementById('technicalBlock');
     if (tBlock) {
       tBlock.classList.remove('hidden');
-      tBlock.innerHTML = buildTechnicalHTML(data);
+      tBlock.innerHTML = buildTechnicalHTML(normalized);
     }
   }
 
-  if (data.external_apis || data.virustotal || data.urlscan) {
+  if (normalized.external_apis || normalized.virustotal || normalized.urlscan) {
     const eBlock = document.getElementById('externalBlock');
     if (eBlock) {
       eBlock.classList.remove('hidden');
-      eBlock.innerHTML = buildExternalAPIHTML(data);
+      eBlock.innerHTML = buildExternalAPIHTML(normalized);
     }
   }
 
-  if (data.honeypot_result) {
+  if (normalized.honeypot_result) {
     const hBlock = document.getElementById('honeypotBlock');
     if (hBlock) {
       hBlock.classList.remove('hidden');
-      hBlock.innerHTML = buildHoneypotHTML(data.honeypot_result);
+      hBlock.innerHTML = buildHoneypotHTML(normalized.honeypot_result);
     }
   }
 
-  if (data.qr_codes) {
+  if (normalized.qr_codes) {
     const block = document.getElementById('resultsBlock');
-    if (block) block.innerHTML += buildQRSection(data.qr_codes);
+    if (block) block.innerHTML += buildQRSection(normalized.qr_codes);
   }
 
   block?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function normalizeDetectionResult(data, type) {
+  const llm = data.llm_analysis || {};
+  const features = data.features || {};
+
+  return {
+    ...data,
+    analysis_type: data.analysis_type || type,
+    verdict: data.verdict || llm.classification || llm.verdict,
+    risk_score: data.risk_score ?? llm.risk_score ?? llm.confidence_score,
+    summary: data.summary || llm.summary || llm.reasoning || llm.explanation,
+    indicators: data.indicators || llm.indicators || llm.key_findings || [],
+    extracted_urls: data.extracted_urls || features.extracted_urls || features.links || [],
+    technical_details: data.technical_details || features,
+    whois: data.whois || features.whois,
+    ssl_info: data.ssl_info || features.ssl,
+    virustotal: data.virustotal || (data.external_apis ? data.external_apis.virustotal : null),
+    urlscan: data.urlscan || (data.external_apis ? data.external_apis.urlscan : null),
+  };
 }
 
 function buildMainResultsHTML(data, type) {
