@@ -213,14 +213,16 @@ class ForensicReportGenerator:
         """Render HTML and convert to PDF using Playwright"""
         try:
             features = data.get('features', {})
+            behavioral = data.get('behavioral_analysis', {})
             llm = data.get('llm_analysis', {})
             geo = features.get('geo_location', {})
             
             screenshot_b64 = None
-            if features.get('screenshot_path') and os.path.exists(features['screenshot_path']):
-                with open(features['screenshot_path'], "rb") as img_file:
+            screenshot_path = behavioral.get('screenshot_path') or features.get('screenshot_path')
+            if screenshot_path and os.path.exists(screenshot_path):
+                with open(screenshot_path, "rb") as img_file:
                     screenshot_b64 = base64.b64encode(img_file.read()).decode('utf-8')
-            pcap_data = features.get('pcap_analysis', {})
+            pcap_data = behavioral.get('pcap_analysis') or features.get('pcap_analysis', {})
             pcap_stats = pcap_data.get('statistics', {}) if pcap_data else {}
             
             context = {

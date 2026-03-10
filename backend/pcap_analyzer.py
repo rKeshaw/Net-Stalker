@@ -37,7 +37,7 @@ class PCAPAnalyzer:
 
             # Convert Scapy packets to readable dicts 
             raw_packets = []
-            for i, p in enumerate(pcaps[:100]): 
+            for i, p in enumerate(pcaps): 
                 decoded = self.pd.ether_decode(p)
                 decoded['id'] = i + 1
                 raw_packets.append(decoded)
@@ -82,7 +82,8 @@ class PCAPAnalyzer:
                 "statistics": stats,
                 "flow_analysis": flow_data,
                 "geo_map": geo_data,
-                "raw_packets_sample": raw_packets  # First 100 packets
+                "raw_packets_sample": raw_packets,
+                "raw_packets": raw_packets
             }
 
         except Exception as e:

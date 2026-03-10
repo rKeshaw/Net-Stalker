@@ -1,8 +1,10 @@
 import collections
 import geoip2.database
 import os
+import threading
 
 _GEO_READER = None
+_GEO_READER_LOCK = threading.Lock()
 from scapy.all import corrupt_bytes
 
 def pcap_len_statistic(PCAPS):
@@ -80,12 +82,14 @@ def get_geo(ip):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, 'GeoIP', 'GeoLite2-City.mmdb')
     if _GEO_READER is None:
-        if not os.path.exists(db_path):
-            return None
-        try:
-            _GEO_READER = geoip2.database.Reader(db_path)
-        except Exception:
-            return None
+        with _GEO_READER_LOCK:
+            if _GEO_READER is None:
+                if not os.path.exists(db_path):
+                    return None
+                try:
+                    _GEO_READER = geoip2.database.Reader(db_path)
+                except Exception:
+                    return None
     
     try:
         response = _GEO_READER.city(ip)

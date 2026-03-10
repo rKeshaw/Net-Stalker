@@ -2,6 +2,7 @@ import email
 from email import policy
 from email.parser import BytesParser
 import re
+import os
 from datetime import datetime
 from urllib.parse import urlparse
 import hashlib
@@ -83,7 +84,9 @@ class EmailPhishingAnalyzer:
         urgency_count = sum(1 for keyword in urgency_keywords if keyword.lower() in body_text.lower())
         self.features['urgency_keyword_count'] = urgency_count
         
-        financial_keywords = ['bank', 'account', 'payment', 'credit card', 'paypal', 'transaction']
+        financial_keywords = ['bank', 'account', 'payment', 'credit card', 'debit card',
+                                'wire transfer', 'invoice', 'refund', 'billing', 'subscription',
+                                'ssn', 'social security', 'tax', 'irs', 'hmrc',] # hard-coded, but okay for demo
         financial_count = sum(1 for keyword in financial_keywords if keyword.lower() in body_text.lower())
         self.features['financial_keyword_count'] = financial_count
         
@@ -193,13 +196,27 @@ class EmailPhishingAnalyzer:
         return False
     
     def _check_spelling_errors(self, text):
-        """Simple heuristic for spelling errors"""
-        if len(text) > 50:
-            upper_ratio = sum(1 for c in text if c.isupper()) / len(text)
-            if upper_ratio > 0.3:
+        """Heuristic spelling checker using dictionary miss ratio and noisy-text signals."""
+        words = re.findall(r"[A-Za-z']+", text.lower())
+        if len(words) < 8:
+            return False
+
+        dictionary = set()
+        dictionary_path = '/usr/share/dict/words'
+        if os.path.exists(dictionary_path):
+            try:
+                with open(dictionary_path, 'r', encoding='utf-8', errors='ignore') as handle:
+                    dictionary = {w.strip().lower() for w in handle if w.strip()}
+            except OSError:
+                dictionary = set()
+
+        if dictionary:
+            misspelled = [w for w in words if len(w) > 2 and w not in dictionary]
+            if (len(misspelled) / len(words)) > 0.35:
                 return True
-        
+
         if re.search(r'(.)\1{3,}', text):
             return True
-        
-        return False
+
+        weird_word_density = sum(1 for w in words if len(set(w)) <= 2 and len(w) >= 5) / len(words)
+        return weird_word_density > 0.2

@@ -154,7 +154,8 @@ class QRCodeAnalyzer:
                 
                 if initial_domain != final_domain:
                     # Check if we started at a "trusted" domain and ended up somewhere else
-                    trusted_redirectors = ['google.com', 'bing.com', 'linkedin.com', 'facebook.com']
+                    trusted_redirectors = ['google.com', 'bing.com', 'linkedin.com', 'twitter.com',
+                                            'facebook.com', 't.co', 'bit.ly', 'tinyurl.com',]
                     if any(t in initial_domain for t in trusted_redirectors):
                         analysis['indicators'].append(f"Suspicious Open Redirect: Started at {initial_domain}, ended at {final_domain}")
                         analysis['risk_score'] += 30
@@ -206,7 +207,9 @@ class QRCodeAnalyzer:
             # This is common in phishing, but also common in ads. We add a low score.
             if page_domain and qr_domain and page_domain not in qr_domain and qr_domain not in page_domain:
                 # Only flag if it's not a common CDN or social link
-                common_external = ['facebook', 'twitter', 'linkedin', 'instagram', 'youtube']
+                common_external = ['paypal', 'apple', 'microsoft', 'amazon', 'google',
+                                    'facebook', 'netflix', 'instagram', 'whatsapp', 'dhl',
+                                    'fedex', 'usps', 'ups', 'chase', 'wells fargo', 'bankofamerica',]
                 if not any(c in qr_domain for c in common_external):
                     analysis['indicators'].append(f"Cross-Domain QR: Page is {page_domain}, QR goes to {qr_domain}")
                     analysis['risk_score'] += 10
@@ -226,14 +229,14 @@ class QRCodeAnalyzer:
                         for resp in response.history:
                             history.append(str(resp.url))
                     return str(response.url), history
-        except:
+        except aiohttp.ClientError:
             # Fallback to GET if HEAD fails (some servers block HEAD)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, headers=self.headers, allow_redirects=True) as response:
-                     if response.history:
+                    if response.history:
                         for resp in response.history:
                             history.append(str(resp.url))
-                     return str(response.url), history
+                    return str(response.url), history
 
     def _analyze_raw_text(self, text: str, analysis: Dict):
         """Analyze non-URL text for risks (e.g. malicious command strings)"""

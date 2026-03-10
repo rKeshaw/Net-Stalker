@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PhishNet | Phishing Detection</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+</head>
+<body class="cyber-body">
+    <div class="container">
+        <header class="cyber-shell">
+            <div class="workspace-nav">
+                <a href="index.html" class="action-btn secondary">← Home</a>
+                <a href="packet.html" class="action-btn secondary">Packet Analysis</a>
+            </div>
+            <h1>🛡️ PhishNet — Phishing Detection</h1>
+            <p class="subtitle">URL • Email • Text • QR Forensics</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('url', this)">🔗 URL Analysis</button>
+            <button class="tab-button" onclick="switchTab('email', this)">📧 Email Analysis</button>
+            <button class="tab-button" onclick="switchTab('text', this)">📝 Text Analysis</button>
+            <button class="tab-button" onclick="switchTab('qr', this)">📱 QR Analysis</button>
+        </div>
+
+        <div id="urlTab" class="tab-content active"><div class="analyzer-section">
+            <h2>🔗 URL Analysis</h2>
+            <div class="input-group">
+                <input type="text" id="urlInput" placeholder="Enter URL to analyze (e.g., https://example.com)" autocomplete="off" />
+                <button id="analyzeUrlBtn" onclick="analyzeURL()"><span id="urlBtnText">Analyze</span><span id="urlBtnLoader" class="loader hidden"></span></button>
+            </div>
+            <p class="help-text">Enter a complete URL including http:// or https://</p>
+            <div class="toggle-group">
+                <label><input type="checkbox" id="urlEnableBehavioral" checked> Enable behavioral browser analysis</label>
+                <label><input type="checkbox" id="urlEnableLiveCapture" checked> Enable live packet capture</label>
+            </div>
+        </div></div>
+
+        <div id="emailTab" class="tab-content"><div class="analyzer-section">
+            <h2>📧 Email Analysis</h2>
+            <div class="upload-area" id="emailUploadArea">
+                <input type="file" id="emailFileInput" accept=".eml" style="display:none;" onchange="handleEmailFile(this)" />
+                <div class="upload-prompt" onclick="document.getElementById('emailFileInput').click()"><div class="upload-icon">📎</div><p><strong>Click to upload</strong> or drag and drop</p><p class="upload-hint">Email files (.eml) only</p></div>
+            </div>
+            <div id="emailFileInfo" class="file-info hidden"><span id="emailFileName"></span><button onclick="clearEmailFile()" class="clear-btn">✕</button></div>
+            <button id="analyzeEmailBtn" onclick="analyzeEmail()" class="hidden"><span id="emailBtnText">Analyze Email</span><span id="emailBtnLoader" class="loader hidden"></span></button>
+        </div></div>
+
+        <div id="textTab" class="tab-content"><div class="analyzer-section">
+            <h2>📝 Text Analysis</h2>
+            <textarea id="textInput" placeholder="Paste email content, message, or any suspicious text here..." rows="10"></textarea>
+            <button id="analyzeTextBtn" onclick="analyzeText()"><span id="textBtnText">Analyze Text</span><span id="textBtnLoader" class="loader hidden"></span></button>
+            <p class="help-text">Minimum 10 characters required</p>
+        </div></div>
+
+        <div id="qrTab" class="tab-content"><div class="analyzer-section">
+            <h2>📱 QR Code Forensics</h2>
+            <div class="upload-area" id="qrUploadArea">
+                <input type="file" id="qrFileInput" accept="image/*" style="display:none;" onchange="handleQRFile(this)" />
+                <div class="upload-prompt" onclick="document.getElementById('qrFileInput').click()"><div class="upload-icon">📸</div><p><strong>Click to upload</strong> or drag and drop QR image</p><p class="upload-hint">Supports .png, .jpg, .jpeg</p></div>
+            </div>
+            <div id="qrFileInfo" class="file-info hidden"><span id="qrFileName"></span><button onclick="clearQRFile()" class="clear-btn">✕</button></div>
+            <div class="toggle-group">
+                <label><input type="checkbox" id="qrEnableBehavioral" checked> Deep URL behavioral scan for QR URLs</label>
+                <label><input type="checkbox" id="qrEnableLiveCapture" checked> Enable live packet capture</label>
+            </div>
+            <button id="analyzeQRBtn" onclick="analyzeQR()" class="hidden"><span id="qrBtnText">Analyze QR Code</span><span id="qrBtnLoader" class="loader hidden"></span></button>
+        </div></div>
+
+        <!-- Shared result workspace -->
+        <div id="resultsContainer" class="hidden">
+            <div class="results-header">
+                <div class="header-left"><h2>Analysis Results</h2><div class="analysis-type-badge" id="analysisTypeBadge"></div></div>
+                <div class="header-right" style="display:flex;gap:10px;align-items:center;">
+                    <div id="verdictBadge" class="verdict-badge hidden"></div>
+                    <button id="downloadPcapBtn" class="action-btn secondary hidden" onclick="downloadPcap()">📡 Download PCAP</button>
+                    <button id="downloadReportBtn" class="action-btn hidden" onclick="downloadReport()">📄 Download PDF Report</button>
+                    <button id="resetResultsBtn" class="action-btn secondary" onclick="resetResults()">♻️ Reset</button>
+                </div>
+            </div>
+            <div id="standardResultsWrapper">
+                <div class="result-card"><h3>🎯 Risk Assessment</h3><div class="risk-score-container"><div class="risk-score" id="riskScore">0</div><div class="risk-label">Risk Score</div></div><div class="confidence">Confidence: <span id="confidence">0%</span></div></div>
+                <div class="result-card"><h3>🔍 Analysis Summary</h3><p id="reasoning" class="reasoning"></p></div>
+                <div class="result-card"><h3>⚠️ Detected Indicators</h3><ul id="indicatorsList" class="indicators-list"></ul></div>
+                <div class="result-card collapsible"><h3 onclick="toggleSection('technicalDetails')">🔧 Technical Details <span class="toggle-icon">▼</span></h3><div id="technicalDetails" class="collapsible-content"><div id="technicalDetailsContent"></div></div></div>
+            </div>
+            <div id="pcapResultsWrapper" class="hidden">
+                <div class="result-card"><h3>📊 Traffic Statistics</h3><div class="tech-grid" id="pcapStatsGrid"></div></div>
+                <div class="result-card"><h3>🥧 Protocol Distribution</h3><div id="protocolChart" style="width:100%; height:400px;"></div></div>
+                <div class="result-card"><h3>📈 Traffic Flow (Time Series)</h3><div id="timeFlowChart" style="width:100%; height:350px;"></div></div>
+                <div class="result-card"><h3>📏 Packet Length Distribution</h3><div id="packetLenChart" style="width:100%; height:350px;"></div></div>
+                <div class="result-card"><h3>🧾 Packet Listing & Filters</h3>
+                    <div class="packet-filters">
+                        <select id="packetProtocolFilter" onchange="applyPacketFilters()"><option value="">All Protocols</option></select>
+                        <input type="text" id="packetSourceFilter" placeholder="Filter source IP/port" oninput="applyPacketFilters()" />
+                        <input type="text" id="packetDestFilter" placeholder="Filter destination IP/port" oninput="applyPacketFilters()" />
+                        <input type="text" id="packetInfoFilter" placeholder="Filter packet info/summary" oninput="applyPacketFilters()" />
+                    </div>
+                    <div class="packet-table-meta" id="packetTableMeta">Showing 0 of 0 packets</div>
+                    <div class="packet-table-wrapper"><table class="packet-table"><thead><tr><th>#</th><th>Time</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Length</th><th>Info</th></tr></thead><tbody id="packetTableBody"></tbody></table></div>
+                </div>
+            </div>
+            <div id="geoMapCard" class="result-card hidden"><h3>🌍 Server Infrastructure & Location</h3><div class="map-container"><div id="phishingMap" style="height:300px; width:100%; border-radius:8px; z-index:1;"></div></div><div id="geoDetails" class="geo-grid" style="margin-top:15px; display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;"></div></div>
+            <div id="externalApiCard" class="result-card collapsible hidden"><h3 onclick="toggleSection('externalApiResults')">🌐 External Threat Intelligence <span class="toggle-icon">▼</span></h3><div id="externalApiResults" class="collapsible-content"><div id="externalApiSummary" class="api-summary"></div><div id="externalApiDetails" class="api-details-grid"></div></div></div>
+            <div id="behavioralCard" class="result-card collapsible hidden"><h3 onclick="toggleSection('behavioralResults')">🎭 Behavioral Analysis <span class="toggle-icon">▼</span></h3><div id="behavioralResults" class="collapsible-content"><div id="behavioralSummary" class="behavioral-summary"></div><div id="behavioralDetails" class="behavioral-details"></div></div></div>
+        </div>
+
+        <div id="errorContainer" class="error-container hidden"><p id="errorMessage"></p></div>
+    </div>
+
+    <div id="progressModal" class="modal hidden"><div class="modal-content"><div class="modal-header"><h3>🔍 Analysis in Progress</h3></div><div class="modal-body"><div class="progress-info"><p id="progressStep" class="progress-step">Initializing...</p><div class="progress-bar-container"><div id="progressBar" class="progress-bar-fill" style="width: 0%"></div></div><p id="progressPercent" class="progress-percent">0%</p></div><div id="progressSteps" class="progress-steps-list"></div></div></div></div>
+
+    <script src="script.js"></script>
+    <script>
+    // Inject cyberpunk theme into ECharts globally
+    (function injectCyberTheme() {
+        const cyberTheme = {
+            color: ['#00f5ff','#00ff9f','#b44dff','#ffb800','#ff2d8d','#ff3d5a','#00bfff','#7fff00'],
+            backgroundColor: 'transparent',
+            textStyle: { color: '#c8e8ff', fontFamily: "'Share Tech Mono', monospace" },
+            title: { textStyle: { color: '#00f5ff' } },
+            legend: { textStyle: { color: '#4a6a8a' } },
+            tooltip: {
+                backgroundColor: 'rgba(4,14,31,0.96)',
+                borderColor: '#00f5ff',
+                borderWidth: 1,
+                textStyle: { color: '#c8e8ff', fontFamily: "'Share Tech Mono', monospace", fontSize: 12 }
+            },
+            categoryAxis: {
+                axisLine: { lineStyle: { color: 'rgba(0,200,240,0.2)' } },
+                axisLabel: { color: '#4a6a8a' },
+                splitLine: { lineStyle: { color: 'rgba(0,200,240,0.07)' } }
+            },
+            valueAxis: {
+                axisLine: { lineStyle: { color: 'rgba(0,200,240,0.2)' } },
+                axisLabel: { color: '#4a6a8a' },
+                splitLine: { lineStyle: { color: 'rgba(0,200,240,0.07)' } }
+            }
+        };
+        if (window.echarts) {
+            echarts.registerTheme('cyber', cyberTheme);
+        } else {
+            // Wait for echarts to load
+            document.querySelector('script[src*="echarts"]').addEventListener('load', function() {
+                if (window.echarts) echarts.registerTheme('cyber', cyberTheme);
+            });
+        }
+    })();
+    </script>
+</body>
+</html>

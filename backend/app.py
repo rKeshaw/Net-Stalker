@@ -20,7 +20,6 @@ from qr_analyzer import QRCodeAnalyzer
 from report_generator import ForensicReportGenerator
 from fastapi.responses import FileResponse
 from pcap_analyzer import PCAPAnalyzer
-import shutil
 from logging_config import get_logger, request_id_ctx, setup_logging
 
 setup_logging()
@@ -37,6 +36,10 @@ async def lifespan(app: FastAPI):
                 logger.exception("Error during background task cleanup")
     
     cleanup_task = asyncio.create_task(cleanup_tasks())
+    api_config = api_aggregator.validate_configuration()
+    logger.info("External API configuration loaded", extra=api_config)
+    if not api_config.get("configured"):
+        logger.warning("No external API keys configured; external intelligence checks are disabled")
     yield  
 
     cleanup_task.cancel()  
@@ -47,14 +50,44 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Phishing Detection API - Prototype", lifespan=lifespan)
 
+_cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
+CORS_ALLOW_ORIGINS = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()] if _cors_origins_env else ["*"]
+CORS_ALLOW_CREDENTIALS = os.getenv("CORS_ALLOW_CREDENTIALS", "false").strip().lower() == "true"
+MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", str(10 * 1024 * 1024)))
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "30"))
+_rate_limit_store = {}
+
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ALLOW_ORIGINS,
+    allow_credentials=CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def _validate_upload_size(file: UploadFile):
+    if file.size is not None and file.size > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail=f"Upload exceeds maximum size of {MAX_UPLOAD_SIZE_BYTES} bytes")
+
+def _safe_join(base_dir: str, filename: str) -> str:
+    safe_filename = os.path.basename(filename)
+    target_path = os.path.realpath(os.path.join(base_dir, safe_filename))
+    base_path = os.path.realpath(base_dir)
+    if not target_path.startswith(base_path + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    return target_path
+
+def _enforce_rate_limit(client_key: str):
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW_SECONDS
+    requests = _rate_limit_store.get(client_key, [])
+    requests = [ts for ts in requests if ts >= window_start]
+    if len(requests) >= RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    requests.append(now)
+    _rate_limit_store[client_key] = requests
 
 class URLRequest(BaseModel):
     url: str
@@ -319,11 +352,14 @@ async def analyze_qr(
     - If Text found -> Triggers immediate text analysis.
     """
     try:
+        _validate_upload_size(file)
         file_ext = file.filename.split('.')[-1]
         temp_filename = f"qr_upload_{int(time.time())}.{file_ext}"
         temp_path = os.path.join("/tmp/phishing_screenshots", temp_filename)
         
         content = await file.read()
+        if len(content) > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail=f"Upload exceeds maximum size of {MAX_UPLOAD_SIZE_BYTES} bytes")
         with open(temp_path, "wb") as f:
             f.write(content)
             
@@ -395,8 +431,7 @@ async def analyze_qr(
 @app.get("/screenshot/{filename}")
 async def get_screenshot(filename: str):
     """Serve screenshot file"""
-    filename = os.path.basename(filename)
-    filepath = os.path.join("/tmp/phishing_screenshots", filename)
+    filepath = _safe_join("/tmp/phishing_screenshots", filename)
     
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Screenshot not found")
@@ -461,10 +496,13 @@ async def analyze_email(file: UploadFile = File(...), background_tasks: Backgrou
     start_time = time.time()
     
     try:
+        _validate_upload_size(file)
         if not file.filename.endswith('.eml'):
             raise HTTPException(status_code=400, detail="Only .eml files are supported")
         
         email_content = await file.read()
+        if len(email_content) > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail=f"Upload exceeds maximum size of {MAX_UPLOAD_SIZE_BYTES} bytes")
         
         analyzer = EmailPhishingAnalyzer(email_content)
         features = await asyncio.to_thread(analyzer.analyze)
@@ -484,7 +522,7 @@ async def analyze_email(file: UploadFile = File(...), background_tasks: Backgrou
         if background_tasks and fastapi_req:
             links = features.get("links", []) if isinstance(features, dict) else []
             deep_scan_tasks = queue_url_deep_scans(links, background_tasks, str(fastapi_req.base_url), max_urls=3)
-            features["deep_scan_links_count"] = len(deep_scan_tasks)
+        features["deep_scan_links_count"] = len(deep_scan_tasks)
         
         return {
             "analysis_type": "email",
@@ -551,6 +589,7 @@ async def analyze_pcap(file: UploadFile = File(...)):
     """Analyze a PCAP file for network forensics"""
     temp_path = None
     try:
+        _validate_upload_size(file)
         if not file.filename.endswith(('.pcap', '.cap', '.pcapng')):
              raise HTTPException(status_code=400, detail="Only .pcap, .cap, or .pcapng files are supported")
 
@@ -558,8 +597,16 @@ async def analyze_pcap(file: UploadFile = File(...)):
         os.makedirs(temp_dir, exist_ok=True)
         temp_path = os.path.join(temp_dir, f"upload_{int(time.time())}_{file.filename}")
         
+        total_written = 0
         with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_written += len(chunk)
+                if total_written > MAX_UPLOAD_SIZE_BYTES:
+                    raise HTTPException(status_code=413, detail=f"Upload exceeds maximum size of {MAX_UPLOAD_SIZE_BYTES} bytes")
+                buffer.write(chunk)
 
         result = await pcap_analyzer.analyze_file(temp_path)
 
@@ -616,7 +663,7 @@ async def download_pcap(filename: str):
     # Security:only serve from the temp directory and sanitize filename
     safe_filename = os.path.basename(filename)
     pcap_dir = "/tmp/phishing_pcaps"
-    filepath = os.path.join(pcap_dir, safe_filename)
+    filepath = _safe_join(pcap_dir, safe_filename)
     
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Capture file not found")
@@ -636,6 +683,8 @@ async def validation_exception_handler(request, exc):
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    client_ip = request.client.host if request.client else "unknown"
+    _enforce_rate_limit(client_ip)
     token = request_id_ctx.set(request_id)
     start = time.time()
 

@@ -3,6 +3,8 @@ import os
 import json
 import time
 import hashlib
+import secrets
+import string
 from typing import Dict, List, Any, Optional
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, Browser, Page, Error as PlaywrightError
@@ -28,15 +30,23 @@ class BehavioralAnalyzer:
         self.pcap_analyzer = PCAPAnalyzer()
         os.makedirs(self.screenshots_dir, exist_ok=True)
 
-        self.honeypot_credentials = {
-            'email': 'honeypot.test@phishdetector.local',
-            'username': 'honeypot_user_test',
-            'password': 'HoneyP0t!Test#2024'
-        }
+        self.honeypot_credentials = self._generate_honeypot_credentials()
         self.qr_analyzer = QRCodeAnalyzer()
+
+    def _generate_honeypot_credentials(self) -> Dict[str, str]:
+        token = secrets.token_hex(4)
+        username = f"hp_{token}"
+        password_charset = string.ascii_letters + string.digits + "!@#$%^&*"
+        password = "".join(secrets.choice(password_charset) for _ in range(18))
+        return {
+            'email': f'{username}@phishdetector.local',
+            'username': username,
+            'password': password
+        }
         
     async def analyze(self, url: str, enable_live_capture: bool = True) -> Dict[str, Any]:
         """Perform behavioral analysis on URL with optional active packet capture."""
+        self.honeypot_credentials = self._generate_honeypot_credentials()
         features = {
             'url': url,
             'analysis_timestamp': datetime.now().isoformat(),
@@ -58,16 +68,7 @@ class BehavioralAnalyzer:
                 pcap_filename = f"trace_{url_hash}_{int(time.time())}.pcap"
                 pcap_path = os.path.join(self.pcap_dir, pcap_filename)
 
-                try:
-                    sniffer = AsyncSniffer(store=True)
-                    sniffer.start()
-                    features['packet_capture_status'] = 'running'
-                    logger.info('Live packet capture started', extra={'url': url, 'file_name': pcap_filename})
-                except (PermissionError, Scapy_Exception, OSError) as capture_error:
-                    features['packet_capture_status'] = 'failed'
-                    features['packet_capture_error'] = str(capture_error)
-                    features['behavioral_indicators'].append('Packet capture unavailable (permission or interface limitation).')
-                    logger.warning('Live packet capture could not start', extra={'url': url, 'error': str(capture_error)})
+                sniffer = AsyncSniffer(store=True)
 
             playwright_mgr = await async_playwright().start()
             ws_endpoint = os.getenv('PLAYWRIGHT_WS_ENDPOINT')
@@ -87,6 +88,18 @@ class BehavioralAnalyzer:
             )
 
             page = await context.new_page()
+
+            if enable_live_capture and sniffer:
+                try:
+                    sniffer.start()
+                    features['packet_capture_status'] = 'running'
+                    logger.info('Live packet capture started', extra={'url': url, 'file_name': os.path.basename(pcap_path) if pcap_path else None})
+                except (PermissionError, Scapy_Exception, OSError) as capture_error:
+                    sniffer = None
+                    features['packet_capture_status'] = 'failed'
+                    features['packet_capture_error'] = str(capture_error)
+                    features['behavioral_indicators'].append('Packet capture unavailable (permission or interface limitation).')
+                    logger.warning('Live packet capture could not start', extra={'url': url, 'error': str(capture_error)})
 
             network_data = {'requests': [], 'responses': [], 'failed_requests': [], 'redirects': [], 'form_submissions': []}
             page.on('request', lambda req: self._on_request(req, network_data))
@@ -419,7 +432,9 @@ class BehavioralAnalyzer:
             
             legitimate_domains = [
                 'google.com', 'facebook.com', 'microsoft.com', 'apple.com',
-                'amazon.com', 'paypal.com', 'netflix.com', 'linkedin.com'
+                'amazon.com', 'twitter.com', 'linkedin.com', 'instagram.com',
+                'youtube.com', 'github.com', 'netflix.com', 'paypal.com',
+                'dropbox.com', 'salesforce.com', 'adobe.com', 'zoom.us',
             ] # Could be expanded with a larger list (Just for a demo)
             
             redirected_trusted = False

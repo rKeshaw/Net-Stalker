@@ -10,6 +10,7 @@ from datetime import datetime
 class BasicPhishingAnalyzer:
     def __init__(self, url):
         self.url = url
+        self.response = None
         self.features = {}
         self.features['geo_path'] = []
         
@@ -105,15 +106,16 @@ class BasicPhishingAnalyzer:
             self.response = None
 
     def analyze_geo_path(self):
-        if not hasattr(self, 'response') or not self.response:
+        response = getattr(self, 'response', None)
+        if not response:
             self._resolve_and_add_hop(self.url, 0, "Initial")
         else:
             hop_index = 0
-            if self.response.history:
-                for resp in self.response.history:
+            if response.history:
+                for resp in response.history:
                     self._resolve_and_add_hop(resp.url, hop_index, "Redirect")
                     hop_index += 1
-            self._resolve_and_add_hop(self.response.url, hop_index, "Final Destination")
+            self._resolve_and_add_hop(response.url, hop_index, "Final Destination")
 
         if self.features['geo_path']:
             final_hop = self.features['geo_path'][-1]

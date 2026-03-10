@@ -19,7 +19,6 @@ class ExternalAPIClient(ABC):
         self.last_request_time = 0
         self.min_request_interval = 0  # Seconds between requests
         
-    @abstractmethod
     async def check_url(self, url: str) -> Dict[str, Any]:
         """Check if URL is malicious"""
         pass
@@ -33,12 +32,12 @@ class ExternalAPIClient(ABC):
         """Generate cache key"""
         return f"{prefix}:{hashlib.md5(value.encode()).hexdigest()}"
     
-    def _rate_limit(self):
-        """Enforce rate limiting"""
+    async def _rate_limit(self):
+        """Enforce rate limiting without blocking the event loop"""
         if self.min_request_interval > 0:
             elapsed = time.time() - self.last_request_time
             if elapsed < self.min_request_interval:
-                time.sleep(self.min_request_interval - elapsed)
+                await asyncio.sleep(self.min_request_interval - elapsed)
         self.last_request_time = time.time()
     
     def _check_cache(self, key: str) -> Optional[Dict]:
@@ -74,7 +73,7 @@ class VirusTotalClient(ExternalAPIClient):
             return cached
         
         try:
-            self._rate_limit()
+            await self._rate_limit()
             
             headers = {"x-apikey": self.api_key}
             
@@ -242,7 +241,7 @@ class VirusTotalClient(ExternalAPIClient):
             return cached
         
         try:
-            self._rate_limit()
+            await self._rate_limit()
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -434,7 +433,7 @@ class PhishTankClient(ExternalAPIClient):
         try:
             import urllib.parse
             
-            self._rate_limit()
+            await self._rate_limit()
             
             payload = {
                 "url": urllib.parse.quote(url),
@@ -565,7 +564,7 @@ class AlienVaultOTXClient(ExternalAPIClient):
             return cached
         
         try:
-            self._rate_limit()
+            await self._rate_limit()
             
             import urllib.parse
             parsed = urllib.parse.urlparse(url)
@@ -721,7 +720,7 @@ class AlienVaultOTXClient(ExternalAPIClient):
             return cached
         
         try:
-            self._rate_limit()
+            await self._rate_limit()
             
             headers = {"X-OTX-API-KEY": self.api_key}
             
@@ -862,6 +861,16 @@ class ExternalAPIAggregator:
             'opswat': OPSWATClient(),
             'cisco_umbrella': CiscoUmbrellaClient(),
             'alienvault_otx': AlienVaultOTXClient()
+        }
+
+    def validate_configuration(self) -> Dict[str, Any]:
+        """Return API key configuration state for startup validation."""
+        configured = [name for name, client in self.clients.items() if client.is_available]
+        missing = [name for name, client in self.clients.items() if not client.is_available]
+        return {
+            "configured": configured,
+            "missing": missing,
+            "total": len(self.clients)
         }
     
     async def check_url(self, url: str) -> Dict[str, Any]:

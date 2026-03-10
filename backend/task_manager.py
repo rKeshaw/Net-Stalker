@@ -61,16 +61,26 @@ class AnalysisTask:
         }
 
 class TaskManager:
-    def __init__(self):
+    def __init__(self, max_tasks: int = 2000):
         self.tasks: Dict[str, AnalysisTask] = {}
         self._lock = asyncio.Lock()
+        self.max_tasks = max_tasks
     
     def create_task(self, analysis_type: str, input_data: str) -> str:
         """Create a new analysis task"""
+        if len(self.tasks) >= self.max_tasks:
+            self._evict_oldest_task()
         task_id = str(uuid.uuid4())
         task = AnalysisTask(task_id, analysis_type, input_data)
         self.tasks[task_id] = task
         return task_id
+    
+    def _evict_oldest_task(self):
+        """Evict the oldest task to enforce an upper bound on in-memory task count."""
+        if not self.tasks:
+            return
+        oldest_task_id = min(self.tasks.items(), key=lambda item: item[1].created_at)[0]
+        del self.tasks[oldest_task_id]
     
     def get_task(self, task_id: str) -> Optional[AnalysisTask]:
         """Get task by ID"""
@@ -103,10 +113,10 @@ class TaskManager:
         to_remove = []
         
         for task_id, task in self.tasks.items():
-            if task.completed_at:
-                age = (now - task.completed_at).total_seconds() / 60
-                if age > max_age_minutes:
-                    to_remove.append(task_id)
+            reference_time = task.completed_at or task.created_at
+            age = (now - reference_time).total_seconds() / 60
+            if age > max_age_minutes:
+                to_remove.append(task_id)
         
         for task_id in to_remove:
             del self.tasks[task_id]
