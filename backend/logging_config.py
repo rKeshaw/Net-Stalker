@@ -52,7 +52,7 @@ def setup_logging() -> None:
     stream_handler.setFormatter(formatter)
     root_logger.addHandler(stream_handler)
 
-    log_file = os.getenv("LOG_FILE", "/tmp/phishnet/app.log")
+    log_file = os.getenv("LOG_FILE", "/tmp/net-stalker/app.log")
     log_path = Path(log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 

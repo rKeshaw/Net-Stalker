@@ -646,13 +646,23 @@ function displayGeoMap(features) {
         locations = features.geo_path;
     }
 
-    if (!locations || locations.length === 0) {
-        geoCard.classList.add('hidden');
-        return;
-    }
-
     geoCard.classList.remove('hidden');
     let detailsHtml = '';
+
+    if (!locations || locations.length === 0) {
+        geoDetails.innerHTML = '<div class="tech-item"><span class="tech-label">Status:</span><span class="tech-value" style="color: #94a3b8;">No geographic endpoints or public IPs detected in this analysis.</span></div>';
+        setTimeout(() => {
+            if (mapInstance) {
+                mapInstance.remove();
+            }
+            mapInstance = L.map('phishingMap').setView([20, 0], 2);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OSM contributors',
+                maxZoom: 19
+            }).addTo(mapInstance);
+        }, 300);
+        return;
+    }
 
     if (isPcap) {
         // Render PCAP Geo Table in collapsed, scrollable section
